@@ -6,7 +6,12 @@ declare global {
   var _postgresPool: Pool | undefined;
 }
 
-export const createPool = () => {
+export const isDatabaseConfigured = Boolean(process.env.SQL_HOST);
+
+export const createPool = (): Pool | null => {
+  if (!isDatabaseConfigured) {
+    return null;
+  }
   if (!global._postgresPool) {
     global._postgresPool = new Pool({
       host: process.env.SQL_HOST,
@@ -18,7 +23,7 @@ export const createPool = () => {
     });
 
     global._postgresPool.on('error', (err) => {
-      console.error('Unexpected error on idle SQL pool client:', err);
+      console.warn('Unexpected error on idle SQL pool client:', err?.message || err);
     });
   }
   return global._postgresPool;
@@ -26,4 +31,36 @@ export const createPool = () => {
 
 const pool = createPool();
 
-export const db = drizzle(pool, { schema });
+let dbInstance: any;
+try {
+  if (pool) {
+    dbInstance = drizzle(pool, { schema });
+  } else {
+    const noOp = {
+      findMany: async () => [],
+      findFirst: async () => null,
+      findUnique: async () => null,
+      create: async (d: any) => d?.data ?? {},
+      update: async (d: any) => d?.data ?? {},
+      delete: async () => ({}),
+    };
+    dbInstance = new Proxy({}, {
+      get: (_, prop) => (prop === 'query' ? new Proxy({}, { get: () => noOp }) : async () => []),
+    });
+  }
+} catch (err) {
+  console.warn('[AI Studio] Database not connected — using mock');
+  const noOp = {
+    findMany: async () => [],
+    findFirst: async () => null,
+    findUnique: async () => null,
+    create: async (d: any) => d?.data ?? {},
+    update: async (d: any) => d?.data ?? {},
+    delete: async () => ({}),
+  };
+  dbInstance = new Proxy({}, {
+    get: (_, prop) => (prop === 'query' ? new Proxy({}, { get: () => noOp }) : async () => []),
+  });
+}
+
+export const db = dbInstance;
