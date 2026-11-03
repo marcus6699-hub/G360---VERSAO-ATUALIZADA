@@ -1,0 +1,341 @@
+/* ============================================================
+   G360 BUSINESS — DESIGN SYSTEM TOKENS v1.0
+   Paleta premium: roxo / lilás / lavanda
+   Compatível com modo claro e escuro
+   NÃO aplicar aos sites dos clientes
+   ============================================================ */
+
+:root {
+  /* --- Marca / Primária --- */
+  --g360-purple:        #7C3AED;
+  --g360-purple-hover:  #6D28D9;
+  --g360-purple-light:  #A78BFA;
+  --g360-purple-dark:   #5B21B6;
+  --g360-purple-900:    #4C1D95;
+
+  /* --- Lilás / Lavanda (superfícies e destaques) --- */
+  --g360-lilac:         #C4B5FD;
+  --g360-lavender:      #EDE9FE;
+  --g360-lavender-soft: #F5F3FF;
+
+  /* --- Gradientes --- */
+  --g360-gradient-primary: linear-gradient(135deg, #7C3AED 0%, #A855F7 50%, #C084FC 100%);
+  --g360-gradient-hero:    linear-gradient(135deg, #5B21B6 0%, #7C3AED 40%, #A855F7 100%);
+  --g360-gradient-soft:    linear-gradient(135deg, #EDE9FE 0%, #F5F3FF 100%);
+  --g360-gradient-card:    linear-gradient(180deg, rgba(124,58,237,0.05) 0%, rgba(124,58,237,0) 100%);
+
+  /* --- Superfícies (Light Mode) --- */
+  --g360-surface:       #FAFAFA;
+  --g360-surface-alt:   #F8F7FF;
+  --g360-card-bg:       #FFFFFF;
+  --g360-card-border:   rgba(124, 58, 237, 0.10);
+
+  /* --- Texto (Light Mode) --- */
+  --g360-text-primary:  #1A1033;
+  --g360-text-secondary:#4A3F6B;
+  --g360-text-muted:    #8B7FA8;
+
+  /* --- Bordas e divisores (Light Mode) --- */
+  --g360-border:        rgba(124, 58, 237, 0.12);
+  --g360-border-subtle: rgba(0, 0, 0, 0.06);
+
+  /* --- Header (Light Mode) --- */
+  --g360-header-bg:     rgba(255, 255, 255, 0.92);
+  --g360-header-border: rgba(124, 58, 237, 0.12);
+
+  /* --- Sombras --- */
+  --g360-shadow-xs:   0 1px 3px rgba(124, 58, 237, 0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --g360-shadow-sm:   0 2px 8px rgba(124, 58, 237, 0.10), 0 1px 3px rgba(0,0,0,0.06);
+  --g360-shadow-md:   0 4px 20px rgba(124, 58, 237, 0.15), 0 2px 8px rgba(0,0,0,0.08);
+  --g360-shadow-lg:   0 8px 40px rgba(124, 58, 237, 0.20), 0 4px 16px rgba(0,0,0,0.10);
+  --g360-shadow-glow: 0 0 24px rgba(124, 58, 237, 0.35);
+
+  /* --- Nav Mobile (Light Mode) --- */
+  --g360-nav-bg:      rgba(255, 255, 255, 0.97);
+  --g360-nav-border:  rgba(124, 58, 237, 0.12);
+  --g360-nav-active:  #7C3AED;
+  --g360-nav-inactive:#8B7FA8;
+
+  /* --- Raios de borda --- */
+  --g360-radius-sm:  8px;
+  --g360-radius-md:  12px;
+  --g360-radius-lg:  16px;
+  --g360-radius-xl:  20px;
+  --g360-radius-2xl: 24px;
+  --g360-radius-pill: 9999px;
+
+  /* --- Tipografia --- */
+  --g360-font-sans: "Nunito", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --g360-font-display: "Nunito", "Plus Jakarta Sans", Georgia, serif;
+}
+
+/* ============================================================
+   DARK MODE — Sobrescreve tokens necessários
+   ============================================================ */
+.g360-dark, [data-theme="dark"] {
+  /* Superfícies */
+  --g360-surface:       #12101C;
+  --g360-surface-alt:   #1A1630;
+  --g360-card-bg:       #1E1A2E;
+  --g360-card-border:   rgba(167, 139, 250, 0.15);
+
+  /* Texto */
+  --g360-text-primary:  #EDE9FE;
+  --g360-text-secondary:#C4B5FD;
+  --g360-text-muted:    #7C6FAE;
+
+  /* Bordas */
+  --g360-border:        rgba(167, 139, 250, 0.18);
+  --g360-border-subtle: rgba(255, 255, 255, 0.06);
+
+  /* Header */
+  --g360-header-bg:     rgba(18, 16, 28, 0.95);
+  --g360-header-border: rgba(167, 139, 250, 0.15);
+
+  /* Sombras (mais escuras) */
+  --g360-shadow-xs:   0 1px 3px rgba(0,0,0,0.3);
+  --g360-shadow-sm:   0 2px 8px rgba(0,0,0,0.4);
+  --g360-shadow-md:   0 4px 20px rgba(0,0,0,0.5);
+  --g360-shadow-lg:   0 8px 40px rgba(0,0,0,0.6);
+  --g360-shadow-glow: 0 0 24px rgba(167, 139, 250, 0.25);
+
+  /* Nav Mobile */
+  --g360-nav-bg:      rgba(18, 16, 28, 0.98);
+  --g360-nav-border:  rgba(167, 139, 250, 0.15);
+  --g360-nav-active:  #A78BFA;
+  --g360-nav-inactive:#7C6FAE;
+}
+
+/* ============================================================
+   CLASSES UTILITÁRIAS G360
+   ============================================================ */
+
+/* Botão Primário — Cápsula com degradê roxo */
+.g360-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--g360-gradient-primary);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: var(--g360-radius-pill);
+  padding: 11px 22px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.2, 0.65, 0.3, 1),
+              box-shadow 0.2s cubic-bezier(0.2, 0.65, 0.3, 1),
+              opacity 0.2s;
+  box-shadow: var(--g360-shadow-sm);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+.g360-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--g360-shadow-md);
+  opacity: 0.95;
+}
+
+.g360-btn-primary:active {
+  transform: translateY(0);
+  box-shadow: var(--g360-shadow-xs);
+}
+
+.g360-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Botão Secundário — Contorno roxo */
+.g360-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--g360-purple);
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: var(--g360-radius-pill);
+  padding: 10px 20px;
+  border: 1.5px solid var(--g360-purple);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+  white-space: nowrap;
+}
+
+.g360-btn-secondary:hover {
+  background: var(--g360-lavender);
+  transform: translateY(-1px);
+  box-shadow: var(--g360-shadow-xs);
+}
+
+/* Botão Ghost / Ícone */
+.g360-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--g360-text-secondary);
+  font-weight: 500;
+  font-size: 13px;
+  border-radius: var(--g360-radius-md);
+  padding: 8px 12px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.g360-btn-ghost:hover {
+  background: var(--g360-lavender-soft);
+  color: var(--g360-purple);
+}
+
+/* Cartão padrão */
+.g360-card {
+  background: var(--g360-card-bg);
+  border: 1px solid var(--g360-card-border);
+  border-radius: var(--g360-radius-xl);
+  box-shadow: var(--g360-shadow-xs);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.g360-card:hover {
+  box-shadow: var(--g360-shadow-sm);
+  transform: translateY(-1px);
+}
+
+/* Cartão Hero (degradê de fundo) */
+.g360-card-hero {
+  background: var(--g360-gradient-hero);
+  border-radius: var(--g360-radius-2xl);
+  box-shadow: var(--g360-shadow-lg);
+  color: #fff;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Hero section — fundo com gradiente roxo */
+.g360-hero {
+  background: var(--g360-gradient-hero);
+  border-radius: var(--g360-radius-2xl);
+  box-shadow: var(--g360-shadow-lg);
+  padding: 40px 32px;
+  color: #fff;
+  overflow: hidden;
+  position: relative;
+}
+
+.g360-hero::before {
+  content: "";
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 200px;
+  height: 200px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.g360-hero::after {
+  content: "";
+  position: absolute;
+  bottom: -40px;
+  left: 20%;
+  width: 140px;
+  height: 140px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Chip de ícone (fundo colorido pequeno) */
+.g360-icon-chip {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--g360-radius-md);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.g360-icon-chip-purple {
+  background: rgba(124, 58, 237, 0.12);
+  color: var(--g360-purple);
+}
+
+.g360-icon-chip-violet {
+  background: rgba(139, 92, 246, 0.12);
+  color: #7C3AED;
+}
+
+/* Tag / Badge */
+.g360-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--g360-radius-pill);
+  padding: 3px 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.g360-badge-purple {
+  background: var(--g360-lavender);
+  color: var(--g360-purple);
+}
+
+.g360-badge-success {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16A34A;
+}
+
+.g360-badge-warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #D97706;
+}
+
+.g360-badge-danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: #DC2626;
+}
+
+/* Input field com estilo G360 */
+.g360-input {
+  width: 100%;
+  border: 1.5px solid var(--g360-border);
+  border-radius: var(--g360-radius-md);
+  padding: 11px 14px;
+  font-size: 14px;
+  background: var(--g360-card-bg);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  color: var(--g360-text-primary);
+  font-family: var(--g360-font-sans);
+}
+
+.g360-input:focus {
+  outline: none;
+  border-color: var(--g360-purple);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+/* Divisor sutil */
+.g360-divider {
+  border: none;
+  border-top: 1px solid var(--g360-border-subtle);
+  margin: 12px 0;
+}
+
+/* Seleção de texto */
+.g360-surface ::selection {
+  background: var(--g360-lavender);
+  color: var(--g360-purple-dark);
+}

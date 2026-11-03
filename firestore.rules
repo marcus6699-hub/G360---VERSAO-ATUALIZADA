@@ -1,0 +1,192 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'plan', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['uid', 'name', 'email', 'photoUrl', 'agencyName', 'phone', 'plan', 'createdAt', 'updatedAt']) &&
+             data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+             data.uid == userId && data.uid == request.auth.uid &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 180 &&
+             data.plan is string && data.plan.size() >= 1 && data.plan.size() <= 40 &&
+             (data.plan == 'g360_full' || data.plan == 'site_express_only') &&
+             data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 60 &&
+             data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 60 &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500)) &&
+             (!('agencyName' in data) || (data.agencyName is string && data.agencyName.size() <= 160)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 40));
+    }
+
+    function isValidLandingPage(data) {
+      return data.keys().hasAll([
+               'id', 'ownerUid', 'slug', 'name', 'businessName',
+               'category', 'city', 'archetype', 'templateId',
+               'status', 'createdAt', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'id', 'ownerUid', 'slug', 'name', 'businessName',
+               'category', 'city', 'phone', 'whatsapp', 'archetype',
+               'templateId', 'paletteId', 'fontId', 'status',
+               'deployedUrl', 'headline', 'subheadline', 'ctaText',
+               'sections', 'siteData', 'createdAt', 'updatedAt'
+             ]) &&
+             data.id is string && data.id.size() >= 1 && data.id.size() <= 120 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 && data.ownerUid.matches('^[a-zA-Z0-9_\\-]+$') &&
+             data.ownerUid == request.auth.uid &&
+             data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 120 && data.slug.matches('^[a-zA-Z0-9_\\-]+$') &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 200 &&
+             data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 200 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 120 &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 120 &&
+             data.archetype is string && data.archetype.size() >= 1 && data.archetype.size() <= 40 &&
+             (data.archetype == 'produtos' || data.archetype == 'servicos' || data.archetype == 'gastronomia') &&
+             data.templateId is string && data.templateId.size() >= 1 && data.templateId.size() <= 80 &&
+             data.status is string && data.status.size() >= 1 && data.status.size() <= 40 &&
+             (data.status == 'draft' || data.status == 'published' || data.status == 'suspended') &&
+             data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 60 &&
+             data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 60 &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 60)) &&
+             (!('whatsapp' in data) || (data.whatsapp is string && data.whatsapp.size() <= 60)) &&
+             (!('paletteId' in data) || (data.paletteId is string && data.paletteId.size() <= 80)) &&
+             (!('fontId' in data) || (data.fontId is string && data.fontId.size() <= 80)) &&
+             (!('deployedUrl' in data) || (data.deployedUrl is string && data.deployedUrl.size() <= 500)) &&
+             (!('headline' in data) || (data.headline is string && data.headline.size() <= 300)) &&
+             (!('subheadline' in data) || (data.subheadline is string && data.subheadline.size() <= 600)) &&
+             (!('ctaText' in data) || (data.ctaText is string && data.ctaText.size() <= 120)) &&
+             (!('sections' in data) || (data.sections is list && data.sections.size() >= 1 && data.sections.size() <= 20 && data.sections[0] is string && data.sections[0].size() <= 60)) &&
+             (!('siteData' in data) || (data.siteData is map && data.siteData.keys().size() <= 15));
+    }
+
+    function isValidAudit(data) {
+      return data.keys().hasAll(['id', 'businessName', 'city', 'overallScore', 'classification', 'verified', 'createdAt', 'ownerUid']) &&
+             data.keys().hasOnly(['id', 'businessName', 'city', 'overallScore', 'classification', 'verified', 'createdAt', 'ownerUid']) &&
+             data.id is string && data.id.size() >= 1 && data.id.size() <= 120 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+             data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 200 &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 120 &&
+             data.overallScore is number && data.overallScore >= 0 && data.overallScore <= 100 &&
+             data.classification is string && data.classification.size() >= 1 && data.classification.size() <= 60 &&
+             data.verified is bool &&
+             data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 60 &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.ownerUid == request.auth.uid;
+    }
+
+    function isValidLead(data) {
+      return data.keys().hasAll(['id', 'businessName', 'stage', 'dealValue', 'createdAt', 'ownerUid']) &&
+             data.keys().hasOnly(['id', 'businessName', 'stage', 'dealValue', 'createdAt', 'ownerUid']) &&
+             data.id is string && data.id.size() >= 1 && data.id.size() <= 120 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+             data.businessName is string && data.businessName.size() >= 1 && data.businessName.size() <= 200 &&
+             data.stage is string && data.stage.size() >= 1 && data.stage.size() <= 60 &&
+             data.dealValue is number && data.dealValue >= 0 && data.dealValue <= 10000000 &&
+             data.createdAt is string && data.createdAt.size() >= 1 && data.createdAt.size() <= 60 &&
+             data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.ownerUid == request.auth.uid;
+    }
+
+    function isValidApiKeys(data, userId) {
+      return data.keys().hasAll(['userId', 'updatedAt']) &&
+             data.keys().hasOnly(['userId', 'geminiApiKey', 'mapsApiKey', 'outscraperApiKey', 'nvidiaApiKey', 'openrouterApiKey', 'groqApiKey', 'serperApiKey', 'updatedAt']) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userId == userId && data.userId == request.auth.uid &&
+             data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 60 &&
+             (!('geminiApiKey' in data) || (data.geminiApiKey is string && data.geminiApiKey.size() <= 256)) &&
+             (!('mapsApiKey' in data) || (data.mapsApiKey is string && data.mapsApiKey.size() <= 256)) &&
+             (!('outscraperApiKey' in data) || (data.outscraperApiKey is string && data.outscraperApiKey.size() <= 256)) &&
+             (!('nvidiaApiKey' in data) || (data.nvidiaApiKey is string && data.nvidiaApiKey.size() <= 256)) &&
+             (!('openrouterApiKey' in data) || (data.openrouterApiKey is string && data.openrouterApiKey.size() <= 256)) &&
+             (!('groqApiKey' in data) || (data.groqApiKey is string && data.groqApiKey.size() <= 256)) &&
+             (!('serperApiKey' in data) || (data.serperApiKey is string && data.serperApiKey.size() <= 256));
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow create: if isVerifiedUser() && isValidId(userId) && isValidUserProfile(incoming(), userId);
+      allow update: if isVerifiedUser() && isValidId(userId) && isValidUserProfile(incoming(), userId) &&
+                       existing().uid == request.auth.uid &&
+                       incoming().uid == existing().uid &&
+                       incoming().email == existing().email &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoUrl', 'agencyName', 'phone', 'plan', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(userId) && request.auth.uid == userId && existing().uid == request.auth.uid;
+    }
+
+    match /landing_pages/{pageId} {
+      allow get: if isSignedIn() && isValidId(pageId) && existing().ownerUid == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isVerifiedUser() && isValidId(pageId) && isValidLandingPage(incoming()) && incoming().id == pageId;
+      allow update: if isVerifiedUser() && isValidId(pageId) && isValidLandingPage(incoming()) &&
+                       existing().ownerUid == request.auth.uid &&
+                       incoming().ownerUid == existing().ownerUid &&
+                       incoming().id == existing().id &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'slug', 'name', 'businessName', 'category', 'city',
+                         'phone', 'whatsapp', 'archetype', 'templateId',
+                         'paletteId', 'fontId', 'status', 'deployedUrl',
+                         'headline', 'subheadline', 'ctaText', 'sections',
+                         'siteData', 'updatedAt'
+                       ]);
+      allow delete: if isVerifiedUser() && isValidId(pageId) && existing().ownerUid == request.auth.uid;
+    }
+
+    match /audits/{auditId} {
+      allow get: if isSignedIn() && isValidId(auditId) && existing().ownerUid == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isVerifiedUser() && isValidId(auditId) && isValidAudit(incoming()) && incoming().id == auditId;
+      allow update: if isVerifiedUser() && isValidId(auditId) && isValidAudit(incoming()) &&
+                       existing().ownerUid == request.auth.uid &&
+                       incoming().ownerUid == existing().ownerUid &&
+                       incoming().id == existing().id &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['businessName', 'city', 'overallScore', 'classification', 'verified']);
+      allow delete: if isVerifiedUser() && isValidId(auditId) && existing().ownerUid == request.auth.uid;
+    }
+
+    match /crm_leads/{leadId} {
+      allow get: if isSignedIn() && isValidId(leadId) && existing().ownerUid == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
+      allow create: if isVerifiedUser() && isValidId(leadId) && isValidLead(incoming()) && incoming().id == leadId;
+      allow update: if isVerifiedUser() && isValidId(leadId) && isValidLead(incoming()) &&
+                       existing().ownerUid == request.auth.uid &&
+                       incoming().ownerUid == existing().ownerUid &&
+                       incoming().id == existing().id &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['businessName', 'stage', 'dealValue']);
+      allow delete: if isVerifiedUser() && isValidId(leadId) && existing().ownerUid == request.auth.uid;
+    }
+
+    match /api_keys/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow create: if isVerifiedUser() && isValidId(userId) && request.auth.uid == userId && isValidApiKeys(incoming(), userId);
+      allow update: if isVerifiedUser() && isValidId(userId) && request.auth.uid == userId && isValidApiKeys(incoming(), userId) &&
+                       existing().userId == request.auth.uid &&
+                       incoming().userId == existing().userId &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['geminiApiKey', 'mapsApiKey', 'outscraperApiKey', 'nvidiaApiKey', 'openrouterApiKey', 'groqApiKey', 'serperApiKey', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(userId) && request.auth.uid == userId;
+    }
+  }
+}

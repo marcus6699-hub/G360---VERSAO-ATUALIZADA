@@ -1,0 +1,8 @@
+{
+  "name": "G360",
+  "description": "Plataforma de geração automática de landing pages profissionais a partir do Google Meu Negócio com edição visual estilo Canva e exportação em HTML independente.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

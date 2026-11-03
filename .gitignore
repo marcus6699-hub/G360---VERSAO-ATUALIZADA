@@ -1,0 +1,17 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.aistudio/
+.gmp_cache/
+public/assets/aistudio/
+*.mp4
+*.zip
+.g360-zero-cost-cache.json
+cost-guard-metrics.json
+DRAFT_firestore.rules
+

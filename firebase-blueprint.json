@@ -1,0 +1,285 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile and agency settings persisted in Firestore",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the user"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Display name of the user"
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 180,
+          "format": "email",
+          "description": "User email address (PII restricted to owner)"
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Profile avatar URL"
+        },
+        "agencyName": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Agency or company name"
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Contact phone or WhatsApp"
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "enum": ["g360_full", "site_express_only"],
+          "description": "Active subscription plan"
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "format": "date-time",
+          "description": "Profile creation ISO timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "format": "date-time",
+          "description": "Last profile update ISO timestamp"
+        }
+      },
+      "required": ["uid", "name", "email", "plan", "createdAt", "updatedAt"]
+    },
+    "LandingPage": {
+      "title": "LandingPage",
+      "description": "Generated landing page (Site Express) persisted in Firestore",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique landing page document ID"
+        },
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the landing page owner"
+        },
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "URL-friendly slug of the landing page"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Project title of the landing page"
+        },
+        "businessName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Client business name"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Business category or niche"
+        },
+        "city": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Business city and state"
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Business phone number"
+        },
+        "whatsapp": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Business WhatsApp number"
+        },
+        "archetype": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "enum": ["produtos", "servicos", "gastronomia"],
+          "description": "Site Express archetype"
+        },
+        "templateId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Selected visual template identifier"
+        },
+        "paletteId": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Color palette identifier"
+        },
+        "fontId": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Typography pair identifier"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "enum": ["draft", "published", "suspended"],
+          "description": "Publication status of the landing page"
+        },
+        "deployedUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Public URL where the landing page is published"
+        },
+        "headline": {
+          "type": "string",
+          "maxLength": 300,
+          "description": "Hero section main headline"
+        },
+        "subheadline": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "Hero section subheadline"
+        },
+        "ctaText": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Primary Call-To-Action label"
+        },
+        "sections": {
+          "type": "array",
+          "description": "Ordered list of active section identifiers (max 20)"
+        },
+        "siteData": {
+          "type": "object",
+          "description": "Structured landing page configuration map (business, texts, theme)"
+        },
+        "createdAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "format": "date-time",
+          "description": "Creation ISO timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "format": "date-time",
+          "description": "Last modification ISO timestamp"
+        }
+      },
+      "required": [
+        "id",
+        "ownerUid",
+        "slug",
+        "name",
+        "businessName",
+        "category",
+        "city",
+        "archetype",
+        "templateId",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AuditReport": {
+      "title": "AuditReport",
+      "description": "G360 Google Business Profile audit report and Geogrid analysis",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Unique audit ID" },
+        "businessName": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Audited business name" },
+        "city": { "type": "string", "minLength": 1, "maxLength": 120, "description": "City of the business" },
+        "overallScore": { "type": "number", "description": "Overall GBP score (0-100)" },
+        "classification": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Score classification label" },
+        "verified": { "type": "boolean", "description": "Whether the profile is verified" },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 60, "format": "date-time", "description": "Creation timestamp" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "UID of the user who created the audit" }
+      },
+      "required": ["id", "businessName", "city", "overallScore", "classification", "verified", "createdAt", "ownerUid"]
+    },
+    "CrmLead": {
+      "title": "CrmLead",
+      "description": "CRM lead and commercial proposal record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Lead ID" },
+        "businessName": { "type": "string", "minLength": 1, "maxLength": 200, "description": "Lead business name" },
+        "stage": { "type": "string", "minLength": 1, "maxLength": 60, "description": "Pipeline stage" },
+        "dealValue": { "type": "number", "description": "Deal value in BRL" },
+        "createdAt": { "type": "string", "minLength": 1, "maxLength": 60, "format": "date-time", "description": "Creation timestamp" },
+        "ownerUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "UID of the owner" }
+      },
+      "required": ["id", "businessName", "stage", "dealValue", "createdAt", "ownerUid"]
+    },
+    "ApiKeys": {
+      "title": "ApiKeys",
+      "description": "User external API keys configuration stored securely",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$", "description": "Owner user UID" },
+        "geminiApiKey": { "type": "string", "maxLength": 256, "description": "Gemini API key" },
+        "mapsApiKey": { "type": "string", "maxLength": 256, "description": "Google Maps API key" },
+        "outscraperApiKey": { "type": "string", "maxLength": 256, "description": "Outscraper API key" },
+        "nvidiaApiKey": { "type": "string", "maxLength": 256, "description": "NVIDIA API key" },
+        "openrouterApiKey": { "type": "string", "maxLength": 256, "description": "OpenRouter API key" },
+        "groqApiKey": { "type": "string", "maxLength": 256, "description": "Groq API key" },
+        "serperApiKey": { "type": "string", "maxLength": 256, "description": "Serper API key" },
+        "updatedAt": { "type": "string", "minLength": 1, "maxLength": 60, "format": "date-time", "description": "Last update timestamp" }
+      },
+      "required": ["userId", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores user profiles and agency settings isolated per user UID"
+    },
+    "/landing_pages/{pageId}": {
+      "schema": { "$ref": "#/entities/LandingPage" },
+      "description": "Stores generated Site Express landing pages owned by each user"
+    },
+    "/audits/{auditId}": {
+      "schema": { "$ref": "#/entities/AuditReport" },
+      "description": "Stores G360 audit reports per user"
+    },
+    "/crm_leads/{leadId}": {
+      "schema": { "$ref": "#/entities/CrmLead" },
+      "description": "Stores CRM pipeline leads per user"
+    },
+    "/api_keys/{userId}": {
+      "schema": { "$ref": "#/entities/ApiKeys" },
+      "description": "Stores user API keys securely per user UID"
+    }
+  }
+}
