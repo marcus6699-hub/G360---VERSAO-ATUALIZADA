@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { toast } from "sonner";
 import {
   Search,
@@ -31,6 +31,7 @@ import {
   History,
 } from "lucide-react";
 import { api, fmtErr } from "@/lib/api";
+import { parseSafeReviewCount } from "@/lib/utils";
 
 const QUICK_PROSPECTS = [
   "Castelinho Pizzaria & Empório Anápolis",
@@ -187,6 +188,7 @@ export default function G360AuditPanel({
 }) {
   const [subTab, setSubTab] = useState("single"); // "single" | "leadfinder"
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [suggestions, setSuggestions] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
@@ -325,13 +327,13 @@ export default function G360AuditPanel({
     });
   }, [activeReport?.business?.name]);
 
-  // Autocomplete search ONLY when user is actively typing (35ms real-time debounce via parallel Serper Places + Images)
+  // Autocomplete search ONLY when user is actively typing (260ms optimized debounce for 60fps input responsiveness)
   useEffect(() => {
     clearTimeout(debounceRef.current);
     if (suppressAutocompleteRef.current) {
       return;
     }
-    const cleanQuery = query.trim();
+    const cleanQuery = deferredQuery.trim();
     if (cleanQuery.length < 2) {
       if (autocompleteAbortRef.current) {
         autocompleteAbortRef.current.abort();
@@ -369,9 +371,9 @@ export default function G360AuditPanel({
           setLoadingSuggestions(false);
         }
       }
-    }, 35);
+    }, 260);
     return () => clearTimeout(debounceRef.current);
-  }, [query]);
+  }, [deferredQuery]);
 
   // Progressive 7-step timer during audit
   useEffect(() => {
@@ -485,7 +487,7 @@ export default function G360AuditPanel({
     }
   };
 
-  // Selecting a suggestion ONLY fills the input & prepares the candidate; analysis starts when clicking "Iniciar Análise"
+  // Selecting a suggestion immediately triggers the analysis for the chosen business
   const handleSelectSuggestion = async (sug) => {
     clearTimeout(debounceRef.current);
     autocompleteSeqRef.current += 1;
@@ -497,51 +499,8 @@ export default function G360AuditPanel({
     setSuggestions([]);
     setLoadingSuggestions(false);
     setQuery(sug.name);
-    setSelectedCandidate(sug);
-    toast.success(`"${sug.name}" selecionada! Clique em "Iniciar Análise" para gerar o diagnóstico.`);
-
-    // Pre-fetch fast details in the background so "Iniciar Análise" is instant and preserves real photos
-    if (sug?.place_id && !String(sug.place_id).startsWith("custom::")) {
-      try {
-        const { data: fullBiz } = await api.get(`/places/details/${encodeURIComponent(sug.place_id)}`, {
-          params: { name: sug.name, fast: "1" },
-        });
-        if (fullBiz && !fullBiz.notFound && fullBiz.name && fullBiz.name !== "Empresa Verificada") {
-          const realFullPhotos = Array.isArray(fullBiz.photos)
-            ? fullBiz.photos.filter((p) => typeof p === "string" && !p.startsWith("data:image/svg+xml"))
-            : [];
-          const realSugPhotos = Array.isArray(sug.photos)
-            ? sug.photos.filter((p) => typeof p === "string" && !p.startsWith("data:image/svg+xml"))
-            : [];
-          const mergedRealPhotos = Array.from(
-            new Set([
-              ...realFullPhotos,
-              ...realSugPhotos,
-              ...(sug.photo && !String(sug.photo).startsWith("data:image/svg+xml") ? [sug.photo] : []),
-            ])
-          );
-          setSelectedCandidate((prev) =>
-            prev && prev.place_id === sug.place_id
-              ? {
-                  ...sug,
-                  ...fullBiz,
-                  name: sug.name || fullBiz.name,
-                  city:
-                    fullBiz.city && fullBiz.city !== "Anápolis"
-                      ? fullBiz.city
-                      : sug.city || fullBiz.city,
-                  uf:
-                    fullBiz.uf && fullBiz.uf !== "GO"
-                      ? fullBiz.uf
-                      : sug.uf || fullBiz.uf,
-                  photo: mergedRealPhotos[0] || getRealCandidatePhoto(fullBiz) || getRealCandidatePhoto(sug),
-                  photos: mergedRealPhotos.length > 0 ? mergedRealPhotos : fullBiz.photos || sug.photos || [],
-                }
-              : prev
-          );
-        }
-      } catch {}
-    }
+    setSelectedCandidate(null);
+    runAuditForBusiness(sug);
   };
 
   const handleStartAnalysisClick = (e) => {
@@ -1211,7 +1170,7 @@ export default function G360AuditPanel({
                               <div className="flex items-center gap-2.5 shrink-0">
                                 <span className="text-[12px] font-bold tabular-nums hidden sm:flex items-center gap-1">
                                   <Star size={13} className="text-[#F59E0B] fill-[#F59E0B]" />
-                                  {Number(sug.rating || 4.8).toFixed(1)} ({sug.rating_count || 18})
+                                  {Number(sug.rating || 4.8).toFixed(1)} ({parseSafeReviewCount(sug.rating_count ?? sug.reviews)} avaliações)
                                 </span>
                                 <span className="px-2.5 py-1 rounded-lg bg-[#7C3AED]/10 text-[12px] font-bold text-[#7C3AED] flex items-center gap-1">
                                   Selecionar <ChevronRight size={14} />
@@ -1312,7 +1271,7 @@ export default function G360AuditPanel({
                     </div>
                     <div className={`text-[12px] flex flex-wrap items-center gap-2 mt-0.5 ${mutedText}`}>
                       <span className="font-bold text-[#F59E0B]">
-                        ★ {Number(selectedCandidate.rating || 4.8).toFixed(1)} ({selectedCandidate.rating_count || 18} avaliações)
+                        ★ {Number(selectedCandidate.rating || 4.8).toFixed(1)} ({parseSafeReviewCount(selectedCandidate.rating_count ?? selectedCandidate.reviews)} avaliações)
                       </span>
                       <span>·</span>
                       <span className="truncate">
@@ -1616,10 +1575,10 @@ export default function G360AuditPanel({
             </div>
           </section>
 
-          {/* 1ª DOBRA: ESQUERDA = PERFIL COMPLETO DA EMPRESA | DIREITA = PONTUAÇÃO GERAL + PONTUAÇÃO DETALHADA + RANKING COMPETITIVO LOCAL (ALTURAS IGUAIS!) */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          {/* 1ª DOBRA: ESQUERDA = PERFIL COMPLETO DA EMPRESA | DIREITA = PONTUAÇÃO GERAL + PONTUAÇÃO DETALHADA + RANKING COMPETITIVO LOCAL */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* LEFT COLUMN (lg:col-span-5): Ficha Oficial da Empresa */}
-            <div className={`lg:col-span-5 h-full rounded-2xl overflow-hidden flex flex-col justify-between ${cardClass}`}>
+            <div className={`lg:col-span-5 rounded-2xl overflow-hidden flex flex-col ${cardClass}`}>
               <div className="flex-1 flex flex-col">
                 {/* Clickable Company Cover Photo + Circular Logo Overlay */}
                 <div
@@ -1694,7 +1653,7 @@ export default function G360AuditPanel({
                             </span>
                           )}
                           <span className={`text-[12px] font-semibold ${mutedText}`}>
-                            ({biz.rating_count !== null && biz.rating_count !== undefined ? `${biz.rating_count} avaliações` : "Sem avaliações"})
+                            ({biz.rating_count !== null && biz.rating_count !== undefined ? `${parseSafeReviewCount(biz.rating_count)} avaliações` : "Sem avaliações"})
                           </span>
                         </div>
                         <div className="text-[12.5px] font-semibold mt-0.5 text-[#7C3AED]">
@@ -1759,58 +1718,109 @@ export default function G360AuditPanel({
                     </div>
 
                     {/* Descrição Real da Empresa na Ficha Oficial do Google (Limite Oficial: 750 caracteres) */}
-                    {Boolean(biz.bio || biz.description) && (() => {
+                    {(() => {
                       const realText = String(biz.bio || biz.description || "").trim();
-                      const charCount = realText.length;
-                      const pctOfGoogleLimit = Math.min(100, Math.round((charCount / 750) * 100));
-                      const isComplete = charCount >= 700;
-                      const isMedium = charCount >= 300 && charCount < 700;
+                      if (realText.length > 0) {
+                        const charCount = realText.length;
+                        const pctOfGoogleLimit = Math.min(100, Math.round((charCount / 750) * 100));
+                        const isComplete = charCount >= 700;
+                        const isMedium = charCount >= 300 && charCount < 700;
 
+                        return (
+                          <div
+                            className={`p-3.5 rounded-xl border text-[12px] space-y-2.5 ${borderCol} ${subtleBg}`}
+                            data-testid="official-gbp-description-card"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-[#7C3AED]">
+                                  Descrição da Empresa
+                                </span>
+                                <span className="text-[9.5px] px-2 py-0.5 rounded-md font-bold bg-[#7C3AED]/10 text-[#7C3AED] border border-[#7C3AED]/20">
+                                  Oficial Google Meu Negócio
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                                <span className={`font-bold ${isComplete ? "text-[#16A34A]" : isMedium ? "text-[#D97706]" : "text-[#DC2626]"}`}>
+                                  {charCount}
+                                </span>
+                                <span className={mutedText}>/ 750 caracteres oficiais</span>
+                              </div>
+                            </div>
+
+                            <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full transition-all duration-500 rounded-full ${
+                                  isComplete
+                                    ? "bg-emerald-500"
+                                    : isMedium
+                                    ? "bg-amber-500"
+                                    : "bg-rose-500"
+                                }`}
+                                style={{ width: `${Math.max(4, pctOfGoogleLimit)}%` }}
+                              />
+                            </div>
+
+                            <p className={`leading-relaxed text-[12px] p-2.5 rounded-lg bg-white/70 dark:bg-black/25 border border-slate-200/70 dark:border-white/5 font-normal ${mutedText}`}>
+                              {realText}
+                            </p>
+
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-0.5 text-[11px]">
+                              <span className={isComplete ? "text-[#16A34A] font-semibold" : isMedium ? "text-[#D97706] font-semibold" : "text-[#DC2626] font-semibold"}>
+                                {isComplete
+                                  ? "Excelente: A empresa preencheu o tamanho oficial de 750 caracteres do Google."
+                                  : `Espaço subutilizado: A empresa cadastrou ${charCount} de 750 caracteres oficiais do Google. Faltam ${750 - charCount} caracteres para o potencial máximo.`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (onOpenGbpPackage) {
+                                    onOpenGbpPackage(biz);
+                                  }
+                                }}
+                                className="text-[#7C3AED] hover:underline font-extrabold shrink-0 cursor-pointer flex items-center gap-1 self-start sm:self-auto"
+                              >
+                                <span>Expandir para 750c no Pacote GBP &rarr;</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Quando a empresa NÃO cadastrou descrição no Google Meu Negócio
                       return (
                         <div
-                          className={`p-3.5 rounded-xl border text-[12px] space-y-2.5 ${borderCol} ${subtleBg}`}
-                          data-testid="official-gbp-description-card"
+                          className={`p-3.5 rounded-xl border text-[12px] space-y-2.5 ${borderCol} ${
+                            dark ? "bg-rose-950/20 border-rose-500/30" : "bg-rose-50/70 border-rose-200"
+                          }`}
+                          data-testid="official-gbp-description-empty"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
-                              <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-[#7C3AED]">
+                              <span className="text-[10.5px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400">
                                 Descrição da Empresa
                               </span>
-                              <span className="text-[9.5px] px-2 py-0.5 rounded-md font-bold bg-[#7C3AED]/10 text-[#7C3AED] border border-[#7C3AED]/20">
-                                Oficial Google Meu Negócio
+                              <span className="text-[9.5px] px-2 py-0.5 rounded-md font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                                Ficha Google Maps
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                              <span className={`font-bold ${isComplete ? "text-[#16A34A]" : isMedium ? "text-[#D97706]" : "text-[#DC2626]"}`}>
-                                {charCount}
-                              </span>
-                              <span className={mutedText}>/ 750 caracteres oficiais</span>
+                              <span className="font-bold text-rose-600 dark:text-rose-400">0</span>
+                              <span className={mutedText}>/ 750 caracteres (Ausente)</span>
                             </div>
                           </div>
 
-                          {/* Barra de preenchimento em relação ao limite oficial de 750 caracteres do Google */}
-                          <div className="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full transition-all duration-500 rounded-full ${
-                                isComplete
-                                  ? "bg-emerald-500"
-                                  : isMedium
-                                  ? "bg-amber-500"
-                                  : "bg-rose-500"
-                              }`}
-                              style={{ width: `${Math.max(4, pctOfGoogleLimit)}%` }}
-                            />
+                          <div className="w-full bg-rose-200 dark:bg-rose-950/50 h-1.5 rounded-full overflow-hidden">
+                            <div className="h-full bg-rose-500 rounded-full" style={{ width: "2%" }} />
                           </div>
 
-                          <p className={`leading-relaxed text-[12px] p-2.5 rounded-lg bg-white/70 dark:bg-black/25 border border-slate-200/70 dark:border-white/5 font-normal ${mutedText}`}>
-                            {realText}
+                          <p className={`leading-relaxed text-[12px] p-2.5 rounded-lg bg-white/70 dark:bg-black/25 border border-rose-200/70 dark:border-rose-900/40 text-rose-950 dark:text-rose-200`}>
+                            <strong>Nenhuma descrição cadastrada na ficha oficial do Google.</strong> O perfil da empresa no Google Maps está com o campo de descrição totalmente vazio (0/750 caracteres), prejudicando a relevância nas buscas locais e na indexação de palavras-chave.
                           </p>
 
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-0.5 text-[11px]">
-                            <span className={isComplete ? "text-[#16A34A] font-semibold" : isMedium ? "text-[#D97706] font-semibold" : "text-[#DC2626] font-semibold"}>
-                              {isComplete
-                                ? "Excelente: A empresa preencheu o tamanho oficial de 750 caracteres do Google."
-                                : `Espaço subutilizado: A empresa cadastrou ${charCount} de 750 caracteres oficiais do Google. Faltam ${750 - charCount} caracteres para o potencial máximo.`}
+                            <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                              Oportunidade Crítica: Cadastrar os 750 caracteres com termos estratégicos.
                             </span>
                             <button
                               type="button"
@@ -1821,7 +1831,7 @@ export default function G360AuditPanel({
                               }}
                               className="text-[#7C3AED] hover:underline font-extrabold shrink-0 cursor-pointer flex items-center gap-1 self-start sm:self-auto"
                             >
-                              <span>Expandir para 750c no Pacote GBP &rarr;</span>
+                              <span>Gerar Descrição de 750c no Pacote GBP &rarr;</span>
                             </button>
                           </div>
                         </div>
@@ -2009,7 +2019,7 @@ export default function G360AuditPanel({
                     <div className={`p-3.5 rounded-xl border space-y-1.5 ${borderCol} ${subtleBg}`} data-testid="star-distribution-card">
                       <div className="flex items-center justify-between text-[11px] font-extrabold uppercase tracking-wider text-[#7C3AED]">
                         <span>Distribuição de Avaliações</span>
-                        <span>{biz.rating_count || 0} avaliações</span>
+                        <span>{parseSafeReviewCount(biz.rating_count)} avaliações</span>
                       </div>
                       {[5, 4, 3, 2, 1].map((star) => {
                         const totalRev = Math.max(1, Number(biz.rating_count) || 0);
@@ -2050,8 +2060,8 @@ export default function G360AuditPanel({
               </div>
             </div>
 
-            {/* RIGHT COLUMN (lg:col-span-7): 1) PONTUAÇÃO GERAL + PONTUAÇÃO DETALHADA | 2) RANKING COMPETITIVO LOCAL (ALINHADO NA BASE COM A COLUNA ESQUERDA) */}
-            <div className="lg:col-span-7 h-full flex flex-col justify-between gap-6">
+            {/* RIGHT COLUMN (lg:col-span-7): 1) PONTUAÇÃO GERAL + PONTUAÇÃO DETALHADA | 2) RANKING COMPETITIVO LOCAL */}
+            <div className="lg:col-span-7 flex flex-col gap-6">
               {/* TOP OF RIGHT COLUMN: PONTUAÇÃO GERAL (VELOCÍMETRO) + PONTUAÇÃO DETALHADA (FRACO / RAZOÁVEL / BOM) */}
               <div className={`rounded-2xl p-5 sm:p-6 ${cardClass}`} data-testid="gbp-check-score-row">
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-center">
@@ -2254,7 +2264,7 @@ export default function G360AuditPanel({
                   </div>
 
                   {/* POSIÇÃO DA EMPRESA COMPARADA AOS CONCORRENTES — LISTA VERTICAL */}
-                  <div className={`flex-1 rounded-2xl border p-4 flex flex-col space-y-3 ${borderCol} ${subtleBg}`}>
+                  <div className={`rounded-2xl border p-4 flex flex-col space-y-3 ${borderCol} ${subtleBg}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <div className="text-[11.5px] font-extrabold uppercase tracking-wider text-[#7C3AED]">
@@ -2285,7 +2295,7 @@ export default function G360AuditPanel({
                     </div>
 
                     <div
-                      className="flex-1 flex flex-col gap-2.5 max-h-[540px] overflow-y-auto pr-1"
+                      className="flex flex-col gap-2.5 max-h-[480px] overflow-y-auto overscroll-contain pr-1 custom-scrollbar"
                       data-testid="competitors-scroll-list"
                     >
                       {activeKeywordObj.competitors.map((comp) => {
@@ -2349,7 +2359,7 @@ export default function G360AuditPanel({
                                   <div className={`text-[11.5px] flex flex-wrap items-center gap-2 mt-0.5 ${mutedText}`}>
                                     <span className="font-bold text-[#F59E0B]">★ {Number(comp.rating || 4.6).toFixed(1)}</span>
                                     <span>·</span>
-                                    <span className="font-semibold">{comp.reviewsCount} avaliações</span>
+                                    <span className="font-semibold">{parseSafeReviewCount(comp.reviewsCount ?? comp.reviews)} avaliações</span>
                                     {comp.category && (
                                       <>
                                         <span>·</span>
@@ -2605,14 +2615,14 @@ export default function G360AuditPanel({
                                 </h4>
                               </div>
                               <span className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg bg-[#7C3AED]/10 text-[#7C3AED]">
-                                Sua empresa: {biz.rating_count ?? 0} avaliações
+                                Sua empresa: {parseSafeReviewCount(biz.rating_count)} avaliações
                               </span>
                             </div>
 
                             <div className="space-y-2.5 pt-1">
                               {competitorsForChart.map((comp, idx) => {
                                 const isTarget = Boolean(comp.isTarget);
-                                const revCount = Number(comp.reviewsCount) || 0;
+                                const revCount = parseSafeReviewCount(comp.reviewsCount ?? comp.reviews, 0);
                                 const widthPct = Math.max(6, Math.round((revCount / maxCompReviews) * 100));
                                 const thumbPhoto = comp.photo || (isTarget ? bizLogoPhoto : "");
                                 return (
@@ -2685,13 +2695,13 @@ export default function G360AuditPanel({
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between text-[12px] font-bold">
                                   <span className="text-[#7C3AED]">{biz.name} (Sua Empresa)</span>
-                                  <span className="font-mono text-[#7C3AED]">{biz.rating_count ?? 0} avaliações</span>
+                                  <span className="font-mono text-[#7C3AED]">{parseSafeReviewCount(biz.rating_count)} avaliações</span>
                                 </div>
                                 <div className={`w-full h-4 rounded-full overflow-hidden ${dark ? "bg-white/10" : "bg-slate-100"}`}>
                                   <div
                                     className="h-full rounded-full bg-[#7C3AED]"
                                     style={{
-                                      width: `${Math.min(100, Math.max(8, Math.round(((Number(biz.rating_count) || 0) / Math.max(avgCompReviews, Number(biz.rating_count) || 1)) * 100)))}%`,
+                                      width: `${Math.min(100, Math.max(8, Math.round(((parseSafeReviewCount(biz.rating_count)) / Math.max(avgCompReviews, parseSafeReviewCount(biz.rating_count, 1))) * 100)))}%`,
                                     }}
                                   />
                                 </div>
@@ -2937,7 +2947,7 @@ export default function G360AuditPanel({
                     ))}
                   </div>
                   <span className="text-zinc-400">
-                    ({loadingTargetBiz?.rating_count || "..."} avaliações)
+                    ({loadingTargetBiz?.rating_count ? `${parseSafeReviewCount(loadingTargetBiz.rating_count)} avaliações` : "Consultando avaliações..."})
                   </span>
                 </div>
               </div>

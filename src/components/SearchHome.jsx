@@ -38,6 +38,7 @@ import {
 import { SITE_TEMPLATES } from "@/lib/sitegen/theme";
 import { createProjectData } from "@/lib/sitegen/projectFactory";
 import { generateSiteHtml } from "@/lib/sitegen/generateSiteHtml";
+import { parseSafeReviewCount } from "@/lib/utils";
 
 const DEMO_CHIPS = [
   "Farmácia Anápolis - DrogaLu",
@@ -286,7 +287,7 @@ export default function SearchHome({ onPick, onClone, onQuickGenerate, onOpenTem
                   {s.rating != null && (
                     <span className="flex items-center gap-1 text-[12.5px] font-bold text-slate-700 flex-none">
                       <Star size={13} className="fill-amber-400 text-amber-400" /> {String(s.rating).replace(".", ",")}
-                      <span className="font-medium text-slate-400">({s.rating_count})</span>
+                      <span className="font-medium text-slate-400">({parseSafeReviewCount(s.rating_count ?? s.reviews)})</span>
                     </span>
                   )}
                 </button>

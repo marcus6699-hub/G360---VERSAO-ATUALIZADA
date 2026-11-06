@@ -124,6 +124,26 @@ export interface G360AuditReport {
   normalized_input: NormalizedBusinessAuditInput;
 }
 
+export function parseSafeReviewCount(val: any, fallback = 0): number {
+  if (val === undefined || val === null || val === "") return fallback;
+  if (typeof val === "number") {
+    if (!Number.isInteger(val) && val > 0 && val < 100) {
+      const strVal = String(val);
+      if (strVal.includes(".")) {
+        const parts = strVal.split(".");
+        if (parts[1] && parts[1].length === 3) {
+          return parseInt(parts[0] + parts[1], 10);
+        }
+      }
+    }
+    return Math.round(val);
+  }
+  const cleanStr = String(val).trim();
+  const digitsOnly = cleanStr.replace(/[^0-9]/g, "");
+  const parsed = parseInt(digitsOnly, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey === "MY_GEMINI_API_KEY") return null;
@@ -341,8 +361,8 @@ export function buildCompetitorsForKeyword(
       realComps.sort((a: any, b: any) => {
         const modA = ((hashSeed(`${a.name}-${keyword}`) % 18) - 9) * 2.5;
         const modB = ((hashSeed(`${b.name}-${keyword}`) % 18) - 9) * 2.5;
-        const scoreA = Number(a.reviewsCount || 0) * (Number(a.rating || 4.5) / 5) + modA;
-        const scoreB = Number(b.reviewsCount || 0) * (Number(b.rating || 4.5) / 5) + modB;
+        const scoreA = parseSafeReviewCount(a.reviewsCount, 0) * (Number(a.rating || 4.5) / 5) + modA;
+        const scoreB = parseSafeReviewCount(b.reviewsCount, 0) * (Number(b.rating || 4.5) / 5) + modB;
         return scoreB - scoreA;
       });
     }
@@ -362,7 +382,7 @@ export function buildCompetitorsForKeyword(
           rank: r,
           name: biz.name || "Sua Empresa",
           rating: Number(biz.rating || 4.6),
-          reviewsCount: Number(biz.rating_count ?? biz?.reviews_count ?? 18),
+          reviewsCount: parseSafeReviewCount(biz.rating_count ?? biz?.reviews_count, 18),
           photosCount: Number(
             biz.photos_count ?? (Array.isArray(biz.photos) ? Math.max(8, biz.photos.length) : 10)
           ),
@@ -386,7 +406,7 @@ export function buildCompetitorsForKeyword(
           rank: r,
           name: rc.name,
           rating: Number(rc.rating || 4.6),
-          reviewsCount: Number(rc.reviewsCount || 25),
+          reviewsCount: parseSafeReviewCount(rc.reviewsCount ?? rc.reviews, 25),
           photosCount: Number(rc.photosCount || 20),
           verified: typeof rc.verified === "boolean" ? rc.verified : true,
           hasWebsite: Boolean(rc.hasWebsite),
@@ -410,7 +430,7 @@ export function buildCompetitorsForKeyword(
         rank: r,
         name: biz.name || "Sua Empresa",
         rating: Number(biz.rating || 4.6),
-        reviewsCount: Number(biz.rating_count ?? biz?.reviews_count ?? 18),
+        reviewsCount: parseSafeReviewCount(biz.rating_count ?? biz?.reviews_count, 18),
         photosCount: Number(biz.photos_count ?? (Array.isArray(biz.photos) ? biz.photos.length : 10)),
         verified: Boolean(biz.verified ?? true),
         hasWebsite: Boolean(biz.website && String(biz.website).trim().length > 4),
@@ -422,9 +442,10 @@ export function buildCompetitorsForKeyword(
       });
     } else {
       const isBetter = r < clampedRank;
+      const bRev = parseSafeReviewCount(biz.rating_count ?? biz?.reviews_count, 30);
       const reviews = isBetter
-        ? Math.max(Number(biz.rating_count || 40) + (clampedRank - r) * 35, 90 + ((seed + r * 29) % 180))
-        : Math.max(5, Math.round(Number(biz.rating_count || 30) * Math.max(0.2, 0.85 - (r - clampedRank) * 0.08)));
+        ? Math.max(bRev + (clampedRank - r) * 35, 90 + ((seed + r * 29) % 180))
+        : Math.max(5, Math.round(bRev * Math.max(0.2, 0.85 - (r - clampedRank) * 0.08)));
       fallbackList.push({
         rank: r,
         name: `${specificNiche} ${city} #${r}`,
@@ -1212,8 +1233,6 @@ export function buildG360AuditReport(rawBizInput: any): G360AuditReport {
       ? `O ${bNameClean}, em ${bCityClean} ${bUfClean}, é referência em lava jato e lavagem automotiva completa, oferecendo serviços de alta qualidade para quem busca praticidade, rapidez e excelente custo-benefício. Atendemos toda ${bCityClean}, sendo ideal para quem procura lava jato em ${bCityClean} ${bUfClean}, lavagem de carro perto de mim e higienização automotiva profissional. Realizamos lavagem simples e completa, higienização interna, limpeza de bancos, aspiração, enceramento e polimento automotivo. Utilizamos produtos de qualidade para garantir brilho, proteção e conservação do seu veículo. Conte com atendimento ágil, confiança e resultado impecável. Agende agora seu horário e surpreenda-se com o resultado.`
       : !bioExplicitlySet && isConfiancaMaquinas
       ? "A Confiança Máquinas | Refrigeração Comercial em Anápolis é especialista em venda de geladeiras, cervejeiras e equipamentos frigoríficos de alta performance para supermercados, bares, restaurantes, lanchonetes, padarias, açougues e estabelecimentos comerciais que precisam conservar bebidas e alimentos com eficiência e economia. Trabalhamos com refrigeração comercial em Anápolis, freezer comercial, expositor de bebidas, expositor refrigerado, balcão refrigerado, cervejeira comercial, geladeira comercial e câmara fria. Oferecemos soluções prontas para uso, atendimento rápido e suporte especializado para quem busca equipamentos comerciais perto de mim ou empresas líderes em Anápolis e refrigeração para empresas."
-      : hasRealSource && !isConfiancaMaquinas
-      ? `${bNameClean}, em ${bCityClean} ${bUfClean}, é referência em ${bCatClean}, oferecendo atendimento de alta qualidade para quem busca praticidade, rapidez e excelente custo-benefício em toda a região de ${bCityClean}. Trabalhamos com soluções completas, estrutura preparada e atendimento ágil para garantir a melhor experiência aos nossos clientes.`
       : "";
   const extractedCid = extractGoogleCidFp(rawBiz) || (isConfiancaMaquinas ? "2650118772122471860" : "");
   const rawPlaceIdStr = String(rawBiz?.place_id || "").trim();
@@ -3417,7 +3436,7 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
               opening_hours: normHours,
               whatsapp: String(top.phone || "").replace(/\D/g, ""),
               rating: top.rating !== undefined && top.rating !== null ? Number(top.rating) : null,
-              rating_count: top.reviews !== undefined && top.reviews !== null ? Number(top.reviews) : null,
+              rating_count: top.reviews !== undefined && top.reviews !== null ? parseSafeReviewCount(top.reviews) : null,
               reviews_data: Array.isArray(top.reviews_data) ? top.reviews_data : null,
               photos_count: typeof top.photos_count === "number" ? Number(top.photos_count) : directOutscraperPhotos.length || null,
               posts_data: Array.isArray(top.posts_data) ? top.posts_data : null,
@@ -3630,7 +3649,7 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
               phone: top.phoneNumber || "(67) 3325-4012",
               whatsapp: String(top.phoneNumber || "").replace(/\D/g, ""),
               rating: Number(top.rating || 4.7),
-              rating_count: Number(top.ratingCount || 45),
+              rating_count: parseSafeReviewCount(top.ratingCount ?? top.reviews, 45),
               photos_count: 18,
               verified: Boolean(top.website),
               website: top.website || "",
@@ -4678,7 +4697,7 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
             .map((p: any) => ({
               name: p.title,
               rating: Number(p.rating || 4.7),
-              reviewsCount: Number(p.ratingCount || 35),
+              reviewsCount: parseSafeReviewCount(p.ratingCount ?? p.reviews, 35),
               photosCount: 15,
               verified: true,
               hasWebsite: Boolean(p.website),
@@ -4711,7 +4730,7 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
             .map((cp: any) => ({
               name: cp.name,
               rating: Number(cp.rating || 4.7),
-              reviewsCount: Number(cp.reviews || 40),
+              reviewsCount: parseSafeReviewCount(cp.reviews ?? cp.ratingCount, 40),
               photosCount: Number(cp.photos_count || 14),
               verified: typeof cp.verified === "boolean" ? cp.verified : true,
               hasWebsite: Boolean(cp.site),

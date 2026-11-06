@@ -1234,6 +1234,28 @@ app.get("/api/places/status", (_req, res) => {
 
 const placesCache = new Map<string, any>();
 
+export function parseSafeReviewCount(val: any, fallback = 0): number {
+  if (val === undefined || val === null || val === "") return fallback;
+  if (typeof val === "number") {
+    // If it was parsed from a localized float like 2.789 or 2.009 (where original text was "2.789" with thousand dot separator)
+    if (!Number.isInteger(val) && val > 0 && val < 100) {
+      const strVal = String(val);
+      if (strVal.includes(".")) {
+        const parts = strVal.split(".");
+        if (parts[1] && parts[1].length === 3) {
+          return parseInt(parts[0] + parts[1], 10);
+        }
+      }
+    }
+    return Math.round(val);
+  }
+  const cleanStr = String(val).trim();
+  // Strip non-digits (handles "2.789", "2,789", "2.009 avaliações", etc.)
+  const digitsOnly = cleanStr.replace(/[^0-9]/g, "");
+  const parsed = parseInt(digitsOnly, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 const BR_CITIES_COORDS: Array<{ city: string; uf: string; lat: number; lng: number }> = [
   { city: "Florianópolis", uf: "SC", lat: -27.5954, lng: -48.548 },
   { city: "São José", uf: "SC", lat: -27.6136, lng: -48.6366 },
@@ -1896,7 +1918,7 @@ app.get("/api/places/autocomplete", async (req, res) => {
               lat: Number(p.latitude) || undefined,
               lng: Number(p.longitude) || undefined,
               rating: Number(p.rating) || 4.8,
-              rating_count: Number(p.ratingCount) || 0,
+              rating_count: parseSafeReviewCount(p.ratingCount ?? p.reviews, 0),
               logo: bestThumb,
               photo: bestThumb,
               photos: candidatePhotos,
@@ -1974,7 +1996,7 @@ app.get("/api/places/autocomplete", async (req, res) => {
               lat: Number(r.latitude) || undefined,
               lng: Number(r.longitude) || undefined,
               rating: Number(r.rating) || 4.8,
-              rating_count: Number(r.reviews) || 0,
+              rating_count: parseSafeReviewCount(r.reviews ?? r.reviews_count ?? r.ratingCount, 0),
               logo: r.logo || bestPhoto,
               photo: bestPhoto,
               photos: directPhotos.length > 0 ? directPhotos : [bestPhoto],
@@ -2784,12 +2806,10 @@ app.get("/api/places/details/:placeId", async (req, res) => {
             : norm.rating !== undefined
             ? Number(norm.rating)
             : 4.8,
-        rating_count:
-          r.reviews !== undefined && r.reviews !== null
-            ? Number(r.reviews)
-            : norm.rating_count !== undefined
-            ? Number(norm.rating_count)
-            : fetchedReviews.length,
+        rating_count: parseSafeReviewCount(
+          r.reviews ?? r.reviews_count ?? norm.rating_count ?? s.ratingCount ?? s.reviews,
+          fetchedReviews.length
+        ),
         verified: r.verified !== undefined ? Boolean(r.verified) : norm.verified ?? true,
         open_now: true,
         hours_text: "",
@@ -2877,7 +2897,7 @@ app.get("/api/places/details/:placeId", async (req, res) => {
       phone,
       whatsapp,
       rating: p.rating !== undefined && p.rating !== null ? Number(p.rating) : null,
-      rating_count: p.userRatingCount !== undefined && p.userRatingCount !== null ? Number(p.userRatingCount) : null,
+      rating_count: parseSafeReviewCount(p.userRatingCount ?? p.reviewsCount, 0),
       open_now: p.regularOpeningHours?.openNow ?? null,
       hours_text: firstHour,
       hours: weekdayHours,
