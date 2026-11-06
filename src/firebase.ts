@@ -35,7 +35,7 @@ import {
 const app = initializeApp(firebaseConfig);
 const firestoreDbId =
   (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId ||
-  "ai-studio-siteexpressstudi-240decf1-5fa3-48b0-a4a7-24dca0d149e7";
+  "ai-studio-g360-30620783-e3f1-481b-b6c6-cd053ea9a773";
 export const db = getFirestore(app, firestoreDbId);
 export const auth = getAuth(app);
 

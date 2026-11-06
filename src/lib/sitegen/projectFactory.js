@@ -6,6 +6,7 @@ import {
   buildMasterCompanyInput,
   buildSiteImagePlanningTable,
 } from "./masterImagePrompt";
+import { sanitizeAndDedupeBusinessPhotos } from "../businessPhotoValidator";
 
 export function createProjectData(business, archetype, templateId = "") {
   const tpl =
@@ -38,8 +39,9 @@ export function createProjectData(business, archetype, templateId = "") {
   const slotDest3 = masterPlan.find((s) => s.id === "destaque_3")?.imageUrl || slotHero;
   const slotAmb = nbSlots.ambiente || masterPlan.find((s) => s.id === "ambiente")?.imageUrl || slotSobre;
 
-  const rawPhotos = (Array.isArray(business?.photos) ? business.photos : []).filter(
-    (p) => typeof p === "string" && (!p.startsWith("data:image/svg+xml") || p.includes("studioGrade"))
+  const rawPhotos = sanitizeAndDedupeBusinessPhotos(
+    Array.isArray(business?.photos) ? business.photos : [],
+    { dropStreetViewIfGalleryExists: true, maxPhotos: 10 }
   );
   const enrichedPhotos =
     rawPhotos.length >= 4

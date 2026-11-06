@@ -23,6 +23,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { api, fmtErr } from "@/lib/api";
+import {
+  sanitizeAndDedupeBusinessPhotos,
+  isOfficialGbpGalleryPhoto,
+} from "@/lib/businessPhotoValidator";
 
 export default function G360GbpPackagePanel({
   dark = false,
@@ -52,6 +56,7 @@ export default function G360GbpPackagePanel({
   const [regeneratingKey, setRegeneratingKey] = useState("");
   const [regeneratingBatch, setRegeneratingBatch] = useState("");
   const [generatingAiPhoto, setGeneratingAiPhoto] = useState(false);
+  const [fetchingRealPhotos, setFetchingRealPhotos] = useState(false);
 
   const getBizStorageKey = (biz) => {
     const raw = String(biz?.place_id || biz?.name || "default")
@@ -458,16 +463,86 @@ export default function G360GbpPackagePanel({
     }
   };
 
+  const fetchRealGooglePhotosForBusiness = async (bizObj, existingUrls = [], silent = false) => {
+    if (!bizObj?.name || String(bizObj?.place_id || "").startsWith("demo-")) return;
+    setFetchingRealPhotos(true);
+    try {
+      const { data } = await api.post("/places/real-photos", {
+        placeId: bizObj.place_id || "",
+        name: bizObj.name || "",
+        city: bizObj.city || "",
+        uf: bizObj.uf || "",
+        address: bizObj.address || "",
+        existingPhotos: existingUrls,
+      });
+      const cleanUrls = sanitizeAndDedupeBusinessPhotos(data?.photos || [], {
+        dropStreetViewIfGalleryExists: true,
+        maxPhotos: 10,
+      });
+      if (cleanUrls.length > 0) {
+        setUserPhotos((prev) => {
+          // Keep any manually uploaded data:image base64 photos
+          const manualUploads = prev.filter((item) => String(item?.url || "").startsWith("data:image/"));
+          const mappedOfficial = cleanUrls.map((url, idx) => ({
+            url,
+            seoName:
+              pkg?.photoSeoNames?.[idx % (pkg?.photoSeoNames?.length || 1)] || `foto-oficial-${idx + 1}.jpg`,
+            label: idx === 0 ? "Capa Principal (Hero)" : `Foto Oficial da Ficha #${idx + 1}`,
+            selectedForSite: true,
+          }));
+          return [...mappedOfficial, ...manualUploads].slice(0, 12);
+        });
+        // Update cached activeBusiness in localStorage so reloads keep the real photos
+        try {
+          const savedBizRaw = localStorage.getItem("g360_active_business_v1");
+          if (savedBizRaw) {
+            const parsedBiz = JSON.parse(savedBizRaw);
+            if (parsedBiz && parsedBiz.name === bizObj.name) {
+              parsedBiz.photos = cleanUrls;
+              parsedBiz.photo = cleanUrls[0] || parsedBiz.photo;
+              localStorage.setItem("g360_active_business_v1", JSON.stringify(parsedBiz));
+            }
+          }
+        } catch {}
+        if (!silent) {
+          toast.success(`${cleanUrls.length} foto(s) oficial(is) verificada(s) da ficha do Google!`);
+        }
+      } else if (!silent) {
+        toast.info("Nenhuma foto adicional encontrada na ficha oficial desta empresa.");
+      }
+    } catch (e) {
+      if (!silent) {
+        toast.error(fmtErr(e, "Erro ao buscar fotos oficiais da ficha"));
+      }
+    } finally {
+      setFetchingRealPhotos(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     const rawPhotos = Array.isArray(activeBusiness?.photos) ? activeBusiness.photos : [];
-    const initialBizPhotos = rawPhotos.slice(0, 10).map((url, idx) => ({
+    const cleanedInitialUrls = sanitizeAndDedupeBusinessPhotos(rawPhotos, {
+      dropStreetViewIfGalleryExists: true,
+      maxPhotos: 10,
+    });
+    const initialBizPhotos = cleanedInitialUrls.map((url, idx) => ({
       url,
       seoName: `foto-oficial-${idx + 1}.jpg`,
       label: idx === 0 ? "Capa Principal (Hero)" : `Foto Oficial da Ficha #${idx + 1}`,
       selectedForSite: true,
     }));
     setUserPhotos(initialBizPhotos);
+
+    // Automatically pull official GBP gallery photos if we have fewer than 4 official GBP photos
+    const officialGbpCount = cleanedInitialUrls.filter((u) => isOfficialGbpGalleryPhoto(u)).length;
+    if (
+      activeBusiness?.name &&
+      !String(activeBusiness?.place_id || "").startsWith("demo-") &&
+      officialGbpCount < 4
+    ) {
+      fetchRealGooglePhotosForBusiness(activeBusiness, cleanedInitialUrls, true);
+    }
 
     const storageKey = getBizStorageKey(activeBusiness);
     const inferTrueBusinessCityUf = (bizObj) => {
@@ -631,12 +706,16 @@ export default function G360GbpPackagePanel({
     pkg,
   ]);
 
-  // Keep userPhotos synced if activeBusiness.photos gets enriched with more photos
+  // Keep userPhotos synced and sanitized if activeBusiness.photos gets enriched with more photos
   useEffect(() => {
     const rawPhotos = Array.isArray(activeBusiness?.photos) ? activeBusiness.photos : [];
-    if (rawPhotos.length > userPhotos.length) {
+    const cleaned = sanitizeAndDedupeBusinessPhotos(rawPhotos, {
+      dropStreetViewIfGalleryExists: true,
+      maxPhotos: 10,
+    });
+    if (cleaned.length > userPhotos.length) {
       setUserPhotos(
-        rawPhotos.slice(0, 10).map((url, idx) => ({
+        cleaned.map((url, idx) => ({
           url,
           seoName: pkg?.photoSeoNames?.[idx % (pkg?.photoSeoNames?.length || 1)] || `foto-oficial-${idx + 1}.jpg`,
           label: idx === 0 ? "Capa Principal (Hero)" : `Foto Oficial da Ficha #${idx + 1}`,
@@ -1747,7 +1826,23 @@ ${(pkg.photoSeoNames || []).map((f) => `- ${f}`).join("\n")}
                 </div>
                 <h2 className="text-[17px] font-bold mt-0.5">Fotos Reais + Estúdio IA com SEO Automático</h2>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={fetchingRealPhotos}
+                  onClick={() =>
+                    fetchRealGooglePhotosForBusiness(
+                      activeBusiness,
+                      userPhotos.map((p) => p.url),
+                      false
+                    )
+                  }
+                  className="px-3 py-1.5 rounded-lg border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 text-[#7C3AED] dark:text-purple-300 text-[12px] font-bold flex items-center gap-1.5 cursor-pointer shadow-sm shrink-0 disabled:opacity-50"
+                  title="Buscar fotos reais oficiais da ficha do Google Maps desta empresa"
+                >
+                  <RefreshCw size={13} className={fetchingRealPhotos ? "animate-spin" : ""} />
+                  <span>{fetchingRealPhotos ? "Buscando no Maps..." : "Puxar Fotos Reais"}</span>
+                </button>
                 <button
                   type="button"
                   disabled={generatingAiPhoto}
@@ -1819,11 +1914,20 @@ ${(pkg.photoSeoNames || []).map((f) => `- ${f}`).join("\n")}
                   pkg.photoSeoNames?.[i % (pkg.photoSeoNames?.length || 1)] || p.seoName || `foto-seo-${i + 1}.jpg`;
                 return (
                   <div
-                    key={i}
+                    key={`${p.url}-${i}`}
                     className={`p-2.5 rounded-xl border ${borderCol} ${subtleBg} flex flex-col justify-between gap-2`}
                   >
                     <div className="relative rounded-lg overflow-hidden bg-slate-900 aspect-[16/10]">
-                      <img src={p.url} alt={seoFilename} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                      <img
+                        src={p.url}
+                        alt={seoFilename}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                        onError={() => {
+                          // Automatically strip any image URL that fails to load in browser so broken image icons never appear
+                          setUserPhotos((prev) => prev.filter((item) => item.url !== p.url));
+                        }}
+                      />
                       <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/75 text-white text-[10px] font-bold">
                         {i === 0 ? "Capa Hero" : `Foto #${i + 1}`}
                       </span>

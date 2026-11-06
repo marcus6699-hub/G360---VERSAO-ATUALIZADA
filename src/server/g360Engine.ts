@@ -13,6 +13,12 @@ import {
   type AnaliseCompletaProjetadaContract,
   type NormalizedBusinessAuditInput,
 } from "./auditorEngine.ts";
+import {
+  sanitizeAndDedupeBusinessPhotos,
+  extractSafeSerperImageUrl,
+  upgradeGooglePhotoUrl,
+  isOfficialGbpGalleryPhoto,
+} from "../lib/businessPhotoValidator.ts";
 
 export interface G360Criterion {
   id: string;
@@ -3385,18 +3391,15 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
             }));
             const normHours = normalizeWorkingHoursToList(top.working_hours ?? top.hours);
 
-            // Collect direct googleusercontent photo URLs from Outscraper without triggering paid Google Places Photo SKUs
-            const directOutscraperPhotos = Array.from(
-              new Set(
-                [
-                  top.photo,
-                  top.street_view,
-                  top.logo,
-                  ...(Array.isArray(top.photos) ? top.photos : []),
-                  ...list.slice(0, 6).map((item: any) => item?.photo).filter(Boolean),
-                ].filter((u) => typeof u === "string" && u.startsWith("http"))
-              )
-            ).slice(0, 10);
+            // Collect direct googleusercontent photo URLs from Outscraper for the target business ONLY (never from competitors!)
+            const directOutscraperPhotos = sanitizeAndDedupeBusinessPhotos(
+              [
+                top.photo,
+                top.street_view,
+                ...(Array.isArray(top.photos) ? top.photos : []),
+              ],
+              { dropStreetViewIfGalleryExists: true, maxPhotos: 10 }
+            );
 
             outscraperCandidate = {
               place_id: top.place_id || `outscraper-${Date.now()}`,
@@ -4182,11 +4185,66 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
                 : Array.isArray(top.subtypes)
                 ? top.subtypes
                 : [];
-            const existingPhotos = Array.isArray(targetBiz.photos)
-              ? targetBiz.photos.filter((p: string) => !String(p).startsWith("data:image/svg+xml"))
-              : [];
-            const osDirectPhotos = [top.photo, top.street_view, top.logo].filter(Boolean);
-            const mergedPhotos = Array.from(new Set([...osDirectPhotos, ...existingPhotos]));
+            const existingPhotos = Array.isArray(targetBiz.photos) ? targetBiz.photos : [];
+            const osDirectPhotos = [top.photo, top.street_view].filter(Boolean);
+            let mergedPhotos = sanitizeAndDedupeBusinessPhotos(
+              [...osDirectPhotos, ...existingPhotos],
+              { dropStreetViewIfGalleryExists: true, maxPhotos: 12 }
+            );
+
+            // Fetch real official GBP gallery photos via Outscraper /maps/photos-v3 if we have fewer than 4 official GBP photos
+            const officialGbpCount = mergedPhotos.filter((u) => isOfficialGbpGalleryPhoto(u)).length;
+            if (officialGbpCount < 4 && costGuard.checkLimit("outscraper").allowed) {
+              try {
+                const resolvedPlaceId =
+                  top.place_id ||
+                  (targetBiz.place_id &&
+                  String(targetBiz.place_id).startsWith("ChIJ")
+                    ? String(targetBiz.place_id)
+                    : "");
+                const photoQuery =
+                  resolvedPlaceId ||
+                  `${top.name || targetBiz.name}, ${top.city || targetBiz.city || ""} - ${
+                    top.state_code || targetBiz.uf || ""
+                  }`;
+                const photosUrl = `https://api.app.outscraper.com/maps/photos-v3?query=${encodeURIComponent(
+                  photoQuery
+                )}&photosLimit=12&async=false&language=pt&region=BR`;
+                const pRes = await fetch(photosUrl, {
+                  headers: { "X-API-KEY": outscraperKey },
+                  signal: AbortSignal.timeout(18000),
+                });
+                if (pRes.ok) {
+                  costGuard.recordCall("outscraper");
+                  const pJson: any = await pRes.json();
+                  const pObj = Array.isArray(pJson?.data?.[0]) ? pJson.data[0][0] : pJson?.data?.[0];
+                  const photosData = Array.isArray(pObj?.photos_data) ? pObj.photos_data : [];
+                  if (photosData.length > 0) {
+                    const scored = photosData
+                      .filter((it: any) => it && (it.photo_url || it.photo_url_big))
+                      .map((it: any, idx: number) => {
+                        const tags = Array.isArray(it.photo_tags)
+                          ? it.photo_tags.map((t: any) => String(t).toLowerCase())
+                          : [];
+                        let priority = idx;
+                        if (tags.includes("front") || tags.includes("exterior")) priority -= 50;
+                        else if (tags.includes("interior") || tags.includes("inside")) priority -= 30;
+                        const rawUrl = String(it.photo_url || it.photo_url_big || "");
+                        return { rawUrl: upgradeGooglePhotoUrl(rawUrl), priority };
+                      })
+                      .sort((a: any, b: any) => a.priority - b.priority)
+                      .map((s: any) => s.rawUrl);
+                    mergedPhotos = sanitizeAndDedupeBusinessPhotos(
+                      [...scored, ...mergedPhotos],
+                      { dropStreetViewIfGalleryExists: true, maxPhotos: 12 }
+                    );
+                  }
+                }
+              } catch {
+                // Keep existing mergedPhotos on timeout
+              }
+            }
+
             const normHours =
               normalizeWorkingHoursToList(targetBiz.hours) ||
               normalizeWorkingHoursToList(targetBiz.opening_hours) ||
@@ -4194,6 +4252,7 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
               normalizeWorkingHoursToList(top.hours);
             targetBiz = healBusinessCityUf({
               ...targetBiz,
+              place_id: top.place_id || targetBiz.place_id,
               name:
                 targetBiz.name && targetBiz.name !== "Empresa Verificada"
                   ? targetBiz.name
@@ -4237,7 +4296,20 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
       }
     }
 
-    // 2a-serper. Enrich photos (up to 15 clickable images) and description via Serper.dev (Zero Google Cloud Billing!)
+    // Always sanitize targetBiz.photos even if Outscraper was skipped
+    if (targetBiz && Array.isArray(targetBiz.photos)) {
+      const cleanedTargetPhotos = sanitizeAndDedupeBusinessPhotos(targetBiz.photos, {
+        dropStreetViewIfGalleryExists: true,
+        maxPhotos: 12,
+      });
+      targetBiz = {
+        ...targetBiz,
+        photos: cleanedTargetPhotos,
+        photo: cleanedTargetPhotos[0] || targetBiz.photo || "",
+      };
+    }
+
+    // 2a-serper. Enrich photos (ONLY if official GBP photos are < 4, and strictly filtered against competitors & broken links) and description via Serper.dev
     const serperKey = getSerperKey();
     if (
       targetBiz &&
@@ -4247,22 +4319,25 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
     ) {
       try {
         const city = targetBiz.city || parseAddrCityUf(targetBiz.address || "").city || "Anápolis";
-        const currentPhotos = Array.isArray(targetBiz.photos) ? targetBiz.photos : [];
-        const needMorePhotos = currentPhotos.length < 10;
+        const currentPhotos = sanitizeAndDedupeBusinessPhotos(
+          Array.isArray(targetBiz.photos) ? targetBiz.photos : [],
+          { dropStreetViewIfGalleryExists: true, maxPhotos: 12 }
+        );
+        const needMorePhotos = currentPhotos.length < 4;
         const needBio = !targetBiz.bio || String(targetBiz.bio).trim().length < 20;
 
         const tasks: Promise<void>[] = [];
         if (needMorePhotos) {
           tasks.push(
             (async () => {
-              const imgQuery = `${targetBiz.name} ${city}`.trim();
+              const imgQuery = `"${targetBiz.name}" ${city}`.trim();
               const imgRes = await fetch("https://google.serper.dev/images", {
                 method: "POST",
                 headers: {
                   "X-API-KEY": serperKey,
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ q: imgQuery, gl: "br", hl: "pt-br", num: 15 }),
+                body: JSON.stringify({ q: imgQuery, gl: "br", hl: "pt-br", num: 12 }),
                 signal: AbortSignal.timeout(3200),
               });
               if (imgRes.ok) {
@@ -4270,12 +4345,16 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
                 const imgJson: any = await imgRes.json();
                 const rawImgs = Array.isArray(imgJson?.images) ? imgJson.images : [];
                 const extraUrls = rawImgs
-                  .map((im: any) => im?.imageUrl || im?.thumbnailUrl || "")
-                  .filter((u: string) => /^https?:\/\//i.test(u));
+                  .map((im: any) => extractSafeSerperImageUrl(im, targetBiz.name))
+                  .filter(Boolean);
                 if (extraUrls.length > 0) {
-                  const combined = Array.from(new Set([...currentPhotos, ...extraUrls])).slice(0, 15);
+                  const combined = sanitizeAndDedupeBusinessPhotos(
+                    [...currentPhotos, ...extraUrls],
+                    { dropStreetViewIfGalleryExists: true, maxPhotos: 10 }
+                  );
                   targetBiz = {
                     ...targetBiz,
+                    photo: combined[0] || targetBiz.photo || "",
                     photos: combined,
                     photos_count: Math.max(Number(targetBiz.photos_count) || 0, combined.length),
                   };
@@ -5111,8 +5190,9 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
         return { id: "gemini", name: "Google Gemini AI", model: "gemini-3.8-flash", keyConfigured: false, active: false, latencyMs: 0, error: "Chave GEMINI_API_KEY não configurada" };
       }
       const t0 = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 350));
       const ai = getGeminiClient();
-      const candidateModels = ["gemini-3.8-flash", "gemini-3.1-flash-lite"];
+      const candidateModels = ["gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
       let lastErr = "";
       for (const candidateModel of candidateModels) {
         try {
@@ -5120,21 +5200,15 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
             ai!.models.generateContent({
               model: candidateModel,
               contents: testPrompt,
-              ...(candidateModel === "gemini-3.8-flash"
-                ? { config: { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } }
-                : {}),
             }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout (>2.8s)")), 2800)),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout (>5.0s)")), 5000)),
           ]);
           const out = (r.text || "").trim().slice(0, 80);
           if (out) {
             return {
               id: "gemini",
               name: "Google Gemini AI (Principal)",
-              model:
-                candidateModel === "gemini-3.8-flash"
-                  ? "gemini-3.8-flash (ThinkingLevel.LOW)"
-                  : "gemini-3.8-flash (Failover 503 → 3.1-flash-lite)",
+              model: candidateModel,
               keyConfigured: true,
               active: true,
               latencyMs: Date.now() - t0,
@@ -5148,7 +5222,7 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
       return {
         id: "gemini",
         name: "Google Gemini AI (Principal)",
-        model: "gemini-3.8-flash",
+        model: "gemini-flash-latest",
         keyConfigured: true,
         active: false,
         latencyMs: Date.now() - t0,
@@ -5159,11 +5233,11 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
     const testGeminiLite = async () => {
       const key = (process.env.GEMINI_API_KEY || "").trim();
       if (!key || key === "MY_GEMINI_API_KEY") {
-        return { id: "gemini_lite", name: "Google Gemini Flash-Lite", model: "gemini-3.1-flash-lite", keyConfigured: false, active: false, latencyMs: 0, error: "Chave ausente" };
+        return { id: "gemini_lite", name: "Google Gemini Flash-Lite", model: "gemini-flash-latest", keyConfigured: false, active: false, latencyMs: 0, error: "Chave ausente" };
       }
       const t0 = Date.now();
       const ai = getGeminiClient();
-      const candidateModels = ["gemini-3.1-flash-lite", "gemini-3.8-flash"];
+      const candidateModels = ["gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3.8-flash"];
       let lastErr = "";
       for (const candidateModel of candidateModels) {
         try {
@@ -5172,14 +5246,14 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
               model: candidateModel,
               contents: testPrompt,
             }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout (>4.5s)")), 4500)),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout (>5.0s)")), 5000)),
           ]);
           const out = (r.text || "").trim().slice(0, 80);
           if (out) {
             return {
               id: "gemini_lite",
-              name: "Google Gemini Flash-Lite (Ultra-Rápido — R$ 0,00)",
-              model: "gemini-3.1-flash-lite",
+              name: "Google Gemini Flash (Ultra-Rápido — R$ 0,00)",
+              model: candidateModel,
               keyConfigured: true,
               active: true,
               latencyMs: Date.now() - t0,
@@ -5193,7 +5267,7 @@ export function createG360Router(getDb: () => any, saveDb: (db: any) => void, de
       return {
         id: "gemini_lite",
         name: "Google Gemini Flash-Lite",
-        model: "gemini-3.1-flash-lite",
+        model: "gemini-flash-latest",
         keyConfigured: true,
         active: false,
         latencyMs: Date.now() - t0,

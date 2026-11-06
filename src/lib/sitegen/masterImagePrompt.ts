@@ -1,5 +1,6 @@
 // PROMPT MESTRE — GERAÇÃO DE IMAGENS PARA SITES (Site Express — Direção Oficial de Arte e Fotografia Comercial)
 import { PALETTES } from "./theme";
+import { sanitizeAndDedupeBusinessPhotos } from "../businessPhotoValidator";
 
 export interface CompanyImageServiceOrProduct {
   nome: string;
@@ -335,11 +336,9 @@ export function buildCompanyImageDataJson(projectDataOrBiz: any): CompanyImageDa
   const servicos = isServiceModel ? mappedItems : [];
   const produtos = !isServiceModel ? mappedItems : [];
 
-  const realPhotos = (Array.isArray(b.photos) ? b.photos : []).filter(
-    (p: any) =>
-      typeof p === "string" &&
-      p.trim() &&
-      (!p.startsWith("data:image/svg+xml") || p.includes("studioGrade"))
+  const realPhotos = sanitizeAndDedupeBusinessPhotos(
+    Array.isArray(b.photos) ? b.photos : [],
+    { dropStreetViewIfGalleryExists: true, maxPhotos: 10 }
   );
 
   const promoSectionOn = Array.isArray(projectDataOrBiz?.sections)

@@ -18,6 +18,13 @@ import {
   insertUserDriveFile,
   deleteUserDriveFile,
 } from "./src/db/users.ts";
+import {
+  sanitizeAndDedupeBusinessPhotos,
+  extractSafeSerperImageUrl,
+  isBrokenOrGarbagePhotoUrl,
+  upgradeGooglePhotoUrl,
+  isOfficialGbpGalleryPhoto,
+} from "./src/lib/businessPhotoValidator.ts";
 
 dotenv.config();
 
@@ -1538,8 +1545,191 @@ function parseCityUfFromAddress(
   return { city: "Anápolis", uf: "GO", neighborhood: "" };
 }
 
+const outscraperPhotosCache = new Map<string, string[]>();
+
+async function fetchOutscraperPlacePhotos(
+  queryOrPlaceId: string,
+  targetBusinessName?: string,
+  maxPhotos = 10
+): Promise<string[]> {
+  const q = String(queryOrPlaceId || "").trim();
+  if (!q || !hasOutscraperKey() || !costGuard.checkLimit("outscraper").allowed) {
+    return [];
+  }
+
+  const cacheKey = q.toLowerCase();
+  if (outscraperPhotosCache.has(cacheKey)) {
+    return outscraperPhotosCache.get(cacheKey)!;
+  }
+
+  try {
+    const outKey = getOutscraperKey();
+    let targetQuery = q;
+    const directSeedPhotos: string[] = [];
+
+    // If not already a Google Place ID (ChIJ...), quickly resolve the exact Place ID + primary photo via search-v3 (~2.5s)
+    if (!q.startsWith("ChIJ")) {
+      try {
+        const searchUrl = `https://api.app.outscraper.com/maps/search-v3?query=${encodeURIComponent(
+          q
+        )}&limit=1&async=false&language=pt&region=BR`;
+        const sRes = await fetch(searchUrl, {
+          headers: { "X-API-KEY": outKey },
+          signal: AbortSignal.timeout(6500),
+        });
+        if (sRes.ok) {
+          costGuard.recordCall("outscraper");
+          const sJson: any = await sRes.json();
+          const firstRow = Array.isArray(sJson?.data?.[0]) ? sJson.data[0][0] : sJson?.data?.[0];
+          if (firstRow) {
+            if (firstRow.place_id) {
+              targetQuery = String(firstRow.place_id);
+            }
+            if (firstRow.photo) directSeedPhotos.push(String(firstRow.photo));
+            if (firstRow.street_view) directSeedPhotos.push(String(firstRow.street_view));
+          }
+        }
+      } catch {
+        // Proceed with text query if search-v3 times out
+      }
+    }
+
+    const url = `https://api.app.outscraper.com/maps/photos-v3?query=${encodeURIComponent(
+      targetQuery
+    )}&photosLimit=12&async=false&language=pt&region=BR`;
+    const res = await fetch(url, {
+      headers: { "X-API-KEY": outKey },
+      signal: AbortSignal.timeout(18000),
+    });
+    if (!res.ok) {
+      return sanitizeAndDedupeBusinessPhotos(directSeedPhotos, {
+        dropStreetViewIfGalleryExists: true,
+        maxPhotos,
+      });
+    }
+    costGuard.recordCall("outscraper");
+    const json: any = await res.json();
+    const placeObj = Array.isArray(json?.data?.[0]) ? json.data[0][0] : json?.data?.[0];
+    if (!placeObj) {
+      return sanitizeAndDedupeBusinessPhotos(directSeedPhotos, {
+        dropStreetViewIfGalleryExists: true,
+        maxPhotos,
+      });
+    }
+
+    const photosData = Array.isArray(placeObj.photos_data) ? placeObj.photos_data : [];
+    // Sort so storefront ("front") and "interior" or owner-uploaded photos appear first
+    const scored = photosData
+      .filter((item: any) => item && (item.photo_url || item.photo_url_big))
+      .map((item: any, idx: number) => {
+        const tags = Array.isArray(item.photo_tags) ? item.photo_tags.map((t: any) => String(t).toLowerCase()) : [];
+        let priority = idx;
+        if (tags.includes("front") || tags.includes("exterior")) priority -= 50;
+        else if (tags.includes("interior") || tags.includes("inside")) priority -= 30;
+        // Prefer photo_url upgraded via upgradeGooglePhotoUrl so video streams (=m18) become valid JPEG thumbnails
+        const rawUrl = String(item.photo_url || item.photo_url_big || "");
+        return { rawUrl: upgradeGooglePhotoUrl(rawUrl), priority };
+      })
+      .sort((a: any, b: any) => a.priority - b.priority);
+
+    const cleaned = sanitizeAndDedupeBusinessPhotos(
+      [...scored.map((s: any) => s.rawUrl), ...directSeedPhotos],
+      { dropStreetViewIfGalleryExists: true, maxPhotos }
+    );
+    if (cleaned.length > 0) {
+      outscraperPhotosCache.set(cacheKey, cleaned);
+      if (targetQuery !== q) {
+        outscraperPhotosCache.set(targetQuery.toLowerCase(), cleaned);
+      }
+    }
+    return cleaned;
+  } catch {
+    return [];
+  }
+}
+
+app.post("/api/places/real-photos", async (req, res) => {
+  try {
+    const { placeId = "", name = "", city = "", uf = "", address = "", existingPhotos = [] } = req.body || {};
+    const bizName = String(name || "").trim();
+    const pid = String(placeId || "").trim();
+    const cleanedExisting = sanitizeAndDedupeBusinessPhotos(
+      Array.isArray(existingPhotos) ? existingPhotos : [],
+      { dropStreetViewIfGalleryExists: true, maxPhotos: 10 }
+    );
+
+    const isRealPlaceId =
+      pid.startsWith("ChIJ") ||
+      (pid.length > 12 &&
+        !pid.startsWith("serper::") &&
+        !pid.startsWith("outscraper::") &&
+        !pid.startsWith("custom::") &&
+        !pid.startsWith("demo-"));
+
+    const formattedTextQuery = bizName
+      ? `${bizName}${city ? `, ${city}` : ""}${uf ? ` - ${uf}` : ""}`
+      : address;
+    const queryTarget = isRealPlaceId ? pid : formattedTextQuery;
+
+    let officialPhotos: string[] = [];
+    if (queryTarget) {
+      officialPhotos = await fetchOutscraperPlacePhotos(queryTarget, bizName, 10);
+      if (officialPhotos.length === 0 && isRealPlaceId && formattedTextQuery) {
+        officialPhotos = await fetchOutscraperPlacePhotos(formattedTextQuery, bizName, 10);
+      }
+    }
+
+    let combined = sanitizeAndDedupeBusinessPhotos([...officialPhotos, ...cleanedExisting], {
+      dropStreetViewIfGalleryExists: true,
+      maxPhotos: 10,
+    });
+
+    // If still fewer than 3 photos, try brand-verified Serper Images (excluding broken Instagram/FB crawlers & competitors)
+    const serperKey = (process.env.SERPER_API_KEY || "").trim();
+    if (combined.length < 3 && bizName && serperKey.length > 10 && costGuard.checkLimit("serper").allowed) {
+      try {
+        const imgRes = await fetch("https://google.serper.dev/images", {
+          method: "POST",
+          headers: {
+            "X-API-KEY": serperKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            q: `"${bizName}" ${city || ""}`.trim(),
+            gl: "br",
+            hl: "pt-br",
+            num: 10,
+          }),
+          signal: AbortSignal.timeout(2500),
+        });
+        if (imgRes.ok) {
+          costGuard.recordCall("serper");
+          const imgJson: any = await imgRes.json();
+          const safeSerperUrls = (Array.isArray(imgJson?.images) ? imgJson.images : [])
+            .map((im: any) => extractSafeSerperImageUrl(im, bizName))
+            .filter(Boolean);
+          combined = sanitizeAndDedupeBusinessPhotos([...combined, ...safeSerperUrls], {
+            dropStreetViewIfGalleryExists: true,
+            maxPhotos: 10,
+          });
+        }
+      } catch {
+        // Ignore fallback error
+      }
+    }
+
+    return res.json({
+      ok: true,
+      photos: combined,
+      officialCount: combined.filter((u) => isOfficialGbpGalleryPhoto(u)).length,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err?.message || "Erro ao buscar fotos reais" });
+  }
+});
+
 app.get("/api/places/autocomplete", async (req, res) => {
-  const q = String(req.query.q || "").trim();
+  const q = String(req.query.q || req.query.input || req.query.textQuery || "").trim();
   if (q.length < 2) return res.json({ suggestions: [] });
 
   // 0. Check 7-day CostGuard Cache first (Zero API calls & instant!)
@@ -1549,7 +1739,8 @@ app.get("/api/places/autocomplete", async (req, res) => {
     const hasMissingPhotosOrBadCity = cachedSuggestions.some(
       (s: any) =>
         !s?.photo ||
-        String(s.photo).startsWith("data:image/svg+xml") ||
+        isBrokenOrGarbagePhotoUrl(s.photo) ||
+        (Array.isArray(s?.photos) && s.photos.some((pUrl: any) => isBrokenOrGarbagePhotoUrl(pUrl))) ||
         (s.city === "Anápolis" &&
           parseCityUfFromAddress(s.address || "", {
             name: s.name,
@@ -1598,18 +1789,12 @@ app.get("/api/places/autocomplete", async (req, res) => {
       const sRes = placesSettled.status === "fulfilled" ? placesSettled.value : null;
       const imgRes = imagesSettled.status === "fulfilled" ? imagesSettled.value : null;
 
-      let serperImages: Array<{ title: string; imageUrl: string; thumbnailUrl: string }> = [];
+      let rawSerperImages: any[] = [];
       if (imgRes && imgRes.ok) {
         costGuard.recordCall("serper");
         const imgData: any = await imgRes.json();
         if (Array.isArray(imgData?.images)) {
-          serperImages = imgData.images
-            .filter((im: any) => im && (im.imageUrl || im.thumbnailUrl))
-            .map((im: any) => ({
-              title: String(im.title || "").toLowerCase(),
-              imageUrl: String(im.imageUrl || im.thumbnailUrl || ""),
-              thumbnailUrl: String(im.thumbnailUrl || im.imageUrl || ""),
-            }));
+          rawSerperImages = imgData.images.filter((im: any) => im && (im.imageUrl || im.thumbnailUrl));
         }
       }
 
@@ -1617,17 +1802,11 @@ app.get("/api/places/autocomplete", async (req, res) => {
         costGuard.recordCall("serper");
         const sData: any = await sRes.json();
         const places = Array.isArray(sData?.places) ? sData.places : [];
-        const allImgUrls = serperImages
-          .map((im) => im.thumbnailUrl || im.imageUrl)
-          .filter((u) => /^https?:\/\//i.test(u));
-        const allHighResUrls = serperImages
-          .map((im) => im.imageUrl || im.thumbnailUrl)
-          .filter((u) => /^https?:\/\//i.test(u));
 
         const suggestions = places
           .filter((p: any) => p && p.title)
           .slice(0, 6)
-          .map((p: any, idx: number) => {
+          .map((p: any) => {
             const parsedLoc = parseCityUfFromAddress(p.address || "", {
               name: p.title,
               query: q,
@@ -1637,19 +1816,19 @@ app.get("/api/places/autocomplete", async (req, res) => {
             });
             const pid = p.cid ? `serper::${p.cid}` : `serper::${encodeURIComponent(p.title)}`;
             const ptCat = translateCategoryPtBr(p.category || "", p.title);
-            const titleWords = String(p.title || "")
-              .toLowerCase()
-              .split(/\s+/)
-              .filter((w) => w.length >= 3);
-            const matchedImg = serperImages.find((im) => titleWords.some((w) => im.title.includes(w)));
-            const bestThumb =
-              p.thumbnailUrl ||
-              (idx === 0 ? matchedImg?.thumbnailUrl || allImgUrls[0] : matchedImg?.thumbnailUrl || allImgUrls[idx]) ||
-              getNicheThumbnailPhoto(p.title, ptCat);
-            const candidatePhotos =
-              idx === 0 && allHighResUrls.length > 0
-                ? Array.from(new Set([bestThumb, ...allHighResUrls])).slice(0, 8)
-                : [bestThumb].filter(Boolean);
+
+            // Only accept Serper images that match this specific business and are not competitors or broken links
+            const verifiedPlacePhotos = rawSerperImages
+              .map((im: any) => extractSafeSerperImageUrl(im, p.title))
+              .filter(Boolean);
+
+            const cleanedPhotos = sanitizeAndDedupeBusinessPhotos([
+              p.thumbnailUrl ? upgradeGooglePhotoUrl(p.thumbnailUrl) : "",
+              ...verifiedPlacePhotos,
+            ]);
+
+            const bestThumb = cleanedPhotos[0] || getNicheThumbnailPhoto(p.title, ptCat);
+            const candidatePhotos = cleanedPhotos.length > 0 ? cleanedPhotos : [bestThumb].filter(Boolean);
 
             const rawAddr = String(p.address || "").trim();
             const fullAddr =
@@ -1721,7 +1900,8 @@ app.get("/api/places/autocomplete", async (req, res) => {
               uf: r.state_code || r.state,
             });
             const pid = r.place_id || `outscraper::${encodeURIComponent(r.name)}`;
-            const directPhotos = [r.photo, r.street_view, r.logo].filter(Boolean);
+            // Sanitize & deduplicate so =w800 and =w1600 of the same photo are never duplicated
+            const directPhotos = sanitizeAndDedupeBusinessPhotos([r.photo, r.street_view]);
             const subtypesArr =
               typeof r.subtypes === "string"
                 ? r.subtypes.split(",").map((s: string) => s.trim()).filter(Boolean)
@@ -2446,16 +2626,41 @@ app.get("/api/places/details/:placeId", async (req, res) => {
       const directPhotos = [
         r.photo,
         r.street_view,
-        r.logo,
         s.thumbnailUrl,
         norm.photo,
         ...(Array.isArray(norm.photos) ? norm.photos : []),
-      ].filter((u) => typeof u === "string" && u.trim() && !u.startsWith("data:image/svg+xml"));
-      let uniquePhotos = Array.from(new Set(directPhotos));
+      ];
+      let uniquePhotos = sanitizeAndDedupeBusinessPhotos(directPhotos, {
+        dropStreetViewIfGalleryExists: true,
+        maxPhotos: 10,
+      });
 
-      // If no real photo yet, fetch quickly from Serper Images
+      const isFastPreview = String(req.query.fast || "") === "1";
+
+      // Fetch real official GBP gallery photos via Outscraper /maps/photos-v3 when needed
+      const officialGbpCount = uniquePhotos.filter((u) => isOfficialGbpGalleryPhoto(u)).length;
+      if (!isFastPreview && officialGbpCount < 4 && hasOutscraperKey() && costGuard.checkLimit("outscraper").allowed) {
+        const realPid =
+          r.place_id ||
+          (!placeId.startsWith("serper::") &&
+          !placeId.startsWith("outscraper::") &&
+          !placeId.startsWith("custom::") &&
+          !placeId.startsWith("demo-")
+            ? placeId
+            : "");
+        const photoQuery = realPid || `${bizName}, ${city} - ${uf}`;
+        const outscraperGallery = await fetchOutscraperPlacePhotos(photoQuery, bizName, 10);
+        if (outscraperGallery.length > 0) {
+          uniquePhotos = sanitizeAndDedupeBusinessPhotos([...outscraperGallery, ...uniquePhotos], {
+            dropStreetViewIfGalleryExists: true,
+            maxPhotos: 10,
+          });
+        }
+      }
+
+      // If still fewer than 2 photos, fetch brand-verified photos from Serper Images
       const serperKey = (process.env.SERPER_API_KEY || "").trim();
-      if (uniquePhotos.length === 0 && serperKey.length > 10 && costGuard.checkLimit("serper").allowed) {
+      if (uniquePhotos.length < 2 && serperKey.length > 10 && costGuard.checkLimit("serper").allowed) {
         try {
           const imgRes = await fetch("https://google.serper.dev/images", {
             method: "POST",
@@ -2463,24 +2668,26 @@ app.get("/api/places/details/:placeId", async (req, res) => {
               "X-API-KEY": serperKey,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ q: `${bizName} ${city}`, gl: "br", hl: "pt-br", num: 6 }),
-            signal: AbortSignal.timeout(1400),
+            body: JSON.stringify({ q: `"${bizName}" ${city}`, gl: "br", hl: "pt-br", num: 8 }),
+            signal: AbortSignal.timeout(1800),
           });
           if (imgRes.ok) {
             costGuard.recordCall("serper");
             const imgJson: any = await imgRes.json();
             const fetchedUrls = (imgJson?.images || [])
-              .map((im: any) => im?.imageUrl || im?.thumbnailUrl || "")
-              .filter((u: string) => /^https?:\/\//i.test(u));
+              .map((im: any) => extractSafeSerperImageUrl(im, bizName))
+              .filter(Boolean);
             if (fetchedUrls.length > 0) {
-              uniquePhotos = fetchedUrls.slice(0, 6);
+              uniquePhotos = sanitizeAndDedupeBusinessPhotos([...uniquePhotos, ...fetchedUrls], {
+                dropStreetViewIfGalleryExists: true,
+                maxPhotos: 8,
+              });
             }
           }
         } catch {}
       }
 
       const profile = buildSmartNicheProfile(bizName, rawCategory, city, uniquePhotos);
-      const isFastPreview = String(req.query.fast || "") === "1";
 
       const { reviews: fetchedReviews, trace: reviewsTrace } = isFastPreview
         ? {
