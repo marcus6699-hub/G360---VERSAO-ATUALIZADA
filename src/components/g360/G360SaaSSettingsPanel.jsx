@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   XCircle,
   KeyRound,
+  Download,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { api, fmtErr } from "@/lib/api";
@@ -790,6 +791,32 @@ function AdminSettings({ dark = false, storageKey }) {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Backup e Download do Código Fonte Completo (.ZIP) */}
+          <div className={`rounded-3xl p-5 sm:p-7 space-y-4 border ${borderCol} ${cardClass}`}>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3 border-inherit">
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#7C3AED] bg-[#EDE9FE] dark:bg-[#7C3AED]/20 px-3 py-1 rounded-full mb-1">
+                  Exportação de Código & GitHub
+                </div>
+                <h2 className="text-[18px] font-bold mt-1 text-slate-900 dark:text-slate-100">
+                  Baixar Código-Fonte Completo (.ZIP)
+                </h2>
+              </div>
+              <a
+                href="/api/g360/download-project-zip"
+                download="G360-VERSAO-ATUALIZADA.zip"
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-[#7C3AED] to-[#A855F7] text-white font-bold text-[13px] hover:opacity-95 shadow-md transition-all cursor-pointer"
+              >
+                <Download size={15} />
+                <span>Baixar Projeto (.ZIP)</span>
+              </a>
+            </div>
+
+            <p className={`text-[12.5px] leading-relaxed ${mutedText}`}>
+              Baixe todo o projeto atualizado em um único arquivo compactado <strong>G360-VERSAO-ATUALIZADA.zip</strong> pronto para extrair no seu computador, abrir no VS Code ou sincronizar com o seu repositório no GitHub.
+            </p>
           </div>
 
           <GoogleWorkspacePanel dark={dark} />

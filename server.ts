@@ -25,6 +25,7 @@ import {
   upgradeGooglePhotoUrl,
   isOfficialGbpGalleryPhoto,
 } from "./src/lib/businessPhotoValidator.ts";
+import JSZip from "jszip";
 
 dotenv.config();
 
@@ -1725,6 +1726,47 @@ app.post("/api/places/real-photos", async (req, res) => {
     });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err?.message || "Erro ao buscar fotos reais" });
+  }
+});
+
+// Download full project source code as a clean ZIP archive with proper headers & filename
+app.get("/api/g360/download-project-zip", async (_req, res) => {
+  try {
+    const zip = new JSZip();
+    const rootDir = process.cwd();
+    const excludeDirs = new Set(["node_modules", ".git", "dist", ".aistudio"]);
+
+    function addDir(dir: string, rel: string) {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          if (!excludeDirs.has(entry.name)) {
+            addDir(path.join(dir, entry.name), path.join(rel, entry.name));
+          }
+        } else {
+          const fullPath = path.join(dir, entry.name);
+          const relPath = path.join(rel, entry.name);
+          // Skip backup tar.gz archives to keep zip small and fast
+          if (entry.name.endsWith(".tar.gz")) continue;
+          zip.file(relPath, fs.readFileSync(fullPath));
+        }
+      }
+    }
+
+    addDir(rootDir, "");
+    const buffer = await zip.generateAsync({
+      type: "nodebuffer",
+      compression: "DEFLATE",
+      compressionOptions: { level: 6 },
+    });
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", 'attachment; filename="G360-VERSAO-ATUALIZADA.zip"');
+    res.setHeader("Content-Length", buffer.length.toString());
+    return res.send(buffer);
+  } catch (err: any) {
+    console.error("Erro ao gerar ZIP do projeto:", err);
+    return res.status(500).json({ error: "Falha ao empacotar o projeto em ZIP" });
   }
 });
 

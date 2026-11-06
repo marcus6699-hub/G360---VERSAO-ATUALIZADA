@@ -24,6 +24,7 @@ import {
   X,
   ShieldCheck,
   Globe,
+  Download,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { api, fmtErr } from "@/lib/api";
@@ -507,6 +508,21 @@ export default function Studio() {
 
             {/* Right: Day/Night Toggle + User Menu */}
             <div className="flex items-center gap-2 shrink-0">
+              <a
+                href="/api/g360/download-project-zip"
+                download="G360-VERSAO-ATUALIZADA.zip"
+                data-testid="download-project-code-btn"
+                title="Baixar todo o código-fonte atualizado em arquivo .ZIP (pronto para GitHub)"
+                className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11.5px] font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer shadow-sm ${
+                  dark
+                    ? "bg-[#1F173B] border-purple-500/30 text-purple-200 hover:bg-[#2C1F52] hover:border-purple-400"
+                    : "bg-purple-50/80 border-purple-200 text-[#7C3AED] hover:bg-purple-100 hover:border-purple-300"
+                }`}
+              >
+                <Download size={14} className="text-[#7C3AED] dark:text-purple-300" />
+                <span>Baixar Código (.ZIP)</span>
+              </a>
+
               <button
                 type="button"
                 onClick={toggleTheme}
@@ -552,13 +568,23 @@ export default function Studio() {
                     <ChevronDown size={13} className={dark ? "text-[#A39BBF]" : "text-[#5E5775]"} />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuContent align="end" className="w-64">
                   <div className="px-3 py-2.5">
                     <div className="text-[13px] font-bold text-slate-900" data-testid="user-menu-name">
                       {user?.name}
                     </div>
                     <div className="text-[11.5px] text-slate-500 truncate">{user?.email}</div>
                   </div>
+                  <DropdownMenuItem asChild>
+                    <a
+                      href="/api/g360/download-project-zip"
+                      download="G360-VERSAO-ATUALIZADA.zip"
+                      className="flex items-center w-full cursor-pointer font-medium text-[12.5px]"
+                    >
+                      <Download size={14} className="mr-2 text-[#7C3AED]" />
+                      <span>Baixar Código Fonte (.ZIP)</span>
+                    </a>
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {
                       if (productMode === "g360") {
